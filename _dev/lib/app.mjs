@@ -2604,6 +2604,301 @@ export async function ensureV134(ctx, page, label = 'v1.3.4 契约') {
     && probe.modes.length === 3 && probe.accents.length === 7;
 }
 
+/* ==========================================================================
+ * v1.4.0 新增：配置模板（保存/应用/导入/导出 JSON）
+ * ========================================================================== */
+
+export const CONFIG_PROFILES_KEY = 'figureplay.configProfiles.v1';
+export const V140_METHODS = ['getConfigSnapshot', 'normalizeConfigSnapshot', 'applyConfigSnapshot'];
+
+/** 读取配置模板 UI/存储/当前快照状态 */
+export async function getConfigUiState(page) {
+  return page.evaluate((key) => {
+    const api = window.__FIGPLAY__;
+    const cfg = window.__CONFIG_PROFILES__;
+    const text = (id) => {
+      const node = document.getElementById(id);
+      return node ? (node.textContent || '').trim() : null;
+    };
+    const val = (id) => {
+      const node = document.getElementById(id);
+      return node ? node.value : null;
+    };
+    const visible = (id) => {
+      const node = document.getElementById(id);
+      return !!node && !node.hidden && node.getClientRects().length > 0;
+    };
+    const listItems = Array.from(document.querySelectorAll('#config-list .config-item')).map((item) => ({
+      name: (item.querySelector('.config-item-head b') || {}).textContent || '',
+      desc: (item.querySelector('.config-item-desc') || {}).textContent || '',
+      summary: (item.querySelector('.config-item-summary') || {}).textContent || '',
+      date: (item.querySelector('.config-item-head span') || {}).textContent || '',
+      actions: Array.from(item.querySelectorAll('[data-action]')).map((btn) => ({
+        action: btn.getAttribute('data-action'),
+        id: btn.getAttribute('data-id'),
+      })),
+    }));
+    let stored = [];
+    let storedRaw = null;
+    try {
+      storedRaw = localStorage.getItem(key);
+      const parsed = storedRaw ? JSON.parse(storedRaw) : [];
+      stored = Array.isArray(parsed) ? parsed : [];
+    } catch (err) { stored = []; }
+    let snapshot = null;
+    let imageCount = null;
+    let history = null;
+    let project = null;
+    try {
+      snapshot = api.getConfigSnapshot();
+      const info = api.getPreviewInfo();
+      imageCount = info.imageCount;
+      history = api.getHistoryState ? api.getHistoryState() : null;
+      const state = api.getState();
+      project = {
+        pageCount: state.pageCount, pageIndex: state.pageIndex,
+        rows: state.layout.rows, cols: state.layout.cols,
+        filled: (state.cells || []).filter(Boolean).length,
+        cellNames: (state.cells || []).map((cell) => (cell ? cell.name : null)),
+      };
+    } catch (err) { snapshot = null; }
+    const sessionRaw = localStorage.getItem('figureplay.session.v1');
+    const dialog = document.getElementById('config-dialog');
+    let profilesPayload = [];
+    try { profilesPayload = cfg && typeof cfg.list === 'function' ? cfg.list() : []; } catch (err) { profilesPayload = []; }
+    return {
+      version: api ? api.version || null : null,
+      runtime: {
+        present: !!cfg,
+        hasList: !!(cfg && typeof cfg.list === 'function'),
+        hasSaveCurrent: !!(cfg && typeof cfg.saveCurrent === 'function'),
+        hasApply: !!(cfg && typeof cfg.apply === 'function'),
+        hasImportJson: !!(cfg && typeof cfg.importJson === 'function'),
+        hasClear: !!(cfg && typeof cfg.clear === 'function'),
+      },
+      ui: {
+        countText: text('config-count'),
+        activeVisible: visible('config-active'),
+        activeName: text('config-active-name'),
+        activeDesc: text('config-active-desc'),
+        dialogOpen: !!dialog && dialog.open === true,
+        nameValue: val('config-name'),
+        descValue: val('config-desc'),
+        saveSummary: text('config-save-summary'),
+        saveStatus: text('config-save-status'),
+        listItems,
+        importPreviewVisible: visible('config-import-preview'),
+        importName: text('config-import-name'),
+        importMeta: text('config-import-meta'),
+        importDesc: text('config-import-desc'),
+        importSummary: text('config-import-summary'),
+        importApplyVisible: visible('config-import-apply'),
+        importSaveVisible: visible('config-import-save'),
+        fileInputPresent: !!document.getElementById('config-file-input'),
+      },
+      storage: {
+        key,
+        raw: storedRaw,
+        length: stored.length,
+        names: stored.map((item) => item && item.name),
+        profilesPayload,
+        sessionPresent: !!sessionRaw,
+        sessionHasConfigKey: /configProfiles|figureplay-config/.test(String(sessionRaw || '')),
+      },
+      snapshot,
+      imageCount,
+      history,
+      project,
+      appearance: (window.FP && FP.appearance) ? FP.appearance.get() : null,
+      htmlTheme: document.documentElement.getAttribute('data-theme'),
+      htmlAccent: document.documentElement.getAttribute('data-accent'),
+    };
+  }, CONFIG_PROFILES_KEY);
+}
+
+export async function waitConfigState(page, predicate, arg, options = {}) {
+  const { timeout = 8000, label = 'config state' } = options;
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    const state = await getConfigUiState(page);
+    try {
+      if (state && predicate(state, arg)) return state;
+    } catch (err) { /* ignore */ }
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`等待超时（${label}, ${timeout}ms）`);
+}
+
+export async function openConfigDialog(page, mode = 'manage') {
+  const selector = mode === 'save' ? '#btn-config-save' : '#btn-config-manage';
+  await page.locator(selector).click();
+  await waitFor(page, () => {
+    const dialog = document.getElementById('config-dialog');
+    return !!dialog && dialog.open === true;
+  }, null, { timeout: 6000, label: 'config dialog open' });
+}
+export async function closeConfigDialog(page) {
+  await page.locator('#config-dialog-close').click();
+  await waitFor(page, () => {
+    const dialog = document.getElementById('config-dialog');
+    return !!dialog && dialog.open === false;
+  }, null, { timeout: 6000, label: 'config dialog close' });
+}
+
+export async function setConfigForm(page, { name, description }) {
+  if (name !== undefined) {
+    await page.locator('#config-name').evaluate((node, value) => {
+      node.value = String(value);
+      node.dispatchEvent(new Event('input', { bubbles: true }));
+    }, name);
+  }
+  if (description !== undefined) {
+    await page.locator('#config-desc').evaluate((node, value) => {
+      node.value = String(value);
+      node.dispatchEvent(new Event('input', { bubbles: true }));
+    }, description);
+  }
+}
+
+/** 在已打开的配置对话框内点击“保存到本机”，等待配置数量增加 */
+export async function saveCurrentConfig(page) {
+  const before = await getConfigUiState(page);
+  await page.locator('#config-save-current').click();
+  const expected = (before.storage.length || 0) + 1;
+  return waitConfigState(page, (state, count) => state.storage.length >= count,
+    expected, { label: 'config saved' });
+}
+
+export async function clickConfigItemAction(page, name, action, options = {}) {
+  const item = page.locator('#config-list .config-item', { has: page.locator(`.config-item-head b`, { hasText: name }) }).first();
+  await item.locator(`[data-action="${action}"]`).click();
+  return options;
+}
+
+/** 点击已保存配置的“应用”（自动 accept confirm） */
+export async function applyConfigItem(page, name, options = {}) {
+  const { accept = true, timeout = 8000 } = options;
+  if (accept) page.once('dialog', async (dialog) => { await dialog.accept(); });
+  await clickConfigItemAction(page, name, 'apply');
+  return waitConfigState(page, (state) => state.ui.activeName === name, null,
+    { timeout, label: `config apply ${name}` });
+}
+
+/** 导出已保存配置的 JSON（下载文件）；返回 {path,filename,size,json,text} */
+export async function exportConfigItem(page, name, dir, filename) {
+  const download = await waitForDownload(page, async () => {
+    await clickConfigItemAction(page, name, 'export');
+  }, { timeout: 30000 });
+  const saved = await saveDownload(download, filename, { dir });
+  const text = fs.readFileSync(saved.path, 'utf8');
+  let json = null;
+  let parseError = null;
+  try { json = JSON.parse(text); } catch (err) { parseError = String(err && err.message ? err.message : err); }
+  return { ...saved, text, json, parseError };
+}
+
+/** 通过隐藏 file input 导入配置 JSON 文件 */
+export async function importConfigFile(page, filePath) {
+  await page.locator('#config-file-input').setInputFiles([filePath]);
+  await page.waitForTimeout(150);
+}
+
+export async function clearConfigProfiles(page) {
+  await page.evaluate(() => {
+    if (window.__CONFIG_PROFILES__ && typeof window.__CONFIG_PROFILES__.clear === 'function') {
+      window.__CONFIG_PROFILES__.clear();
+    }
+  });
+  await page.waitForTimeout(150);
+}
+
+export async function getConfigSnapshot(page) {
+  return page.evaluate(() => window.__FIGPLAY__.getConfigSnapshot());
+}
+export async function normalizeConfigSnapshot(page, raw) {
+  return page.evaluate((value) => window.__FIGPLAY__.normalizeConfigSnapshot(value), raw);
+}
+export async function applyConfigSnapshot(page, raw) {
+  return page.evaluate((value) => window.__FIGPLAY__.applyConfigSnapshot(value), raw);
+}
+
+/** 生成测试用配置文件 */
+export async function writeConfigJsonFile(dir, name, data) {
+  await ensureDir(dir);
+  const filePath = path.join(dir, name);
+  const text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  await fsp.writeFile(filePath, text, 'utf8');
+  return filePath;
+}
+
+/** 探测 v1.4.0 契约 */
+export async function probeV140(page) {
+  return page.evaluate((methods) => {
+    const api = window.__FIGPLAY__;
+    const cfg = window.__CONFIG_PROFILES__;
+    const ids = [
+      'config-card', 'config-count', 'btn-config-save', 'btn-config-manage',
+      'config-dialog', 'config-name', 'config-desc', 'config-save-summary',
+      'config-save-current', 'config-list', 'config-import-btn', 'config-file-input',
+      'config-import-preview', 'config-import-name', 'config-import-meta',
+      'config-import-desc', 'config-import-summary', 'config-import-apply',
+      'config-import-save', 'config-import-cancel', 'config-active',
+    ];
+    let snapshot = null;
+    try { snapshot = api && api.getConfigSnapshot ? api.getConfigSnapshot() : null; } catch (err) { snapshot = null; }
+    return {
+      version: api ? api.version || null : null,
+      apiPresent: !!api,
+      missingMethods: methods.filter((name) => !api || typeof api[name] !== 'function'),
+      runtime: {
+        present: !!cfg,
+        list: !!(cfg && typeof cfg.list === 'function'),
+        saveCurrent: !!(cfg && typeof cfg.saveCurrent === 'function'),
+        apply: !!(cfg && typeof cfg.apply === 'function'),
+        importJson: !!(cfg && typeof cfg.importJson === 'function'),
+      },
+      missingIds: ids.filter((id) => !document.getElementById(id)),
+      snapshotKeys: snapshot ? Object.keys(snapshot) : null,
+      snapshotShape: snapshot ? {
+        rows: snapshot.layout && snapshot.layout.rows,
+        cols: snapshot.layout && snapshot.layout.cols,
+        font: snapshot.label && snapshot.label.fontFamily,
+        format: snapshot.export && snapshot.export.format,
+        hasFilename: !!(snapshot.export && 'filename' in snapshot.export),
+        hasCells: !!(snapshot && 'cells' in snapshot),
+      } : null,
+      countText: (document.getElementById('config-count') || {}).textContent || '',
+    };
+  }, V140_METHODS);
+}
+
+/** 场景启动守卫：v1.4.0 配置模板契约 */
+export async function ensureV140(ctx, page, label = 'v1.4.0 契约') {
+  const probe = await probeV140(page);
+  ctx.evidence.v140Probe = probe;
+  ctx.check(`${label}：应用版本 >= 1.4.0（当前 ${probe.version || 'unknown'}）`,
+    /^1\.(?:[4-9]\.|[1-9]\d\.)|^[2-9]\./.test(String(probe.version || '')), probe.version);
+  ctx.check(`${label}：配置 API 齐全（getConfigSnapshot/normalizeConfigSnapshot/applyConfigSnapshot）`,
+    probe.missingMethods.length === 0, probe.missingMethods);
+  ctx.check(`${label}：__CONFIG_PROFILES__ 运行时提供 list/saveCurrent/apply/importJson`,
+    probe.runtime.present && probe.runtime.list && probe.runtime.saveCurrent
+      && probe.runtime.apply && probe.runtime.importJson, probe.runtime);
+  ctx.check(`${label}：左侧配置卡/对话框/导入预览等 DOM 齐全`,
+    probe.missingIds.length === 0, probe.missingIds);
+  ctx.check(`${label}：getConfigSnapshot 含 layout/label/export 且不含 cells/filename`,
+    !!probe.snapshotKeys
+      && JSON.stringify(probe.snapshotKeys) === JSON.stringify(['layout', 'label', 'export'])
+      && !!probe.snapshotShape && !probe.snapshotShape.hasCells
+      && !probe.snapshotShape.hasFilename,
+    { keys: probe.snapshotKeys, shape: probe.snapshotShape });
+  ctx.check(`${label}：#config-count 初始文案可读（${probe.countText.trim()}）`,
+    /本机\s*\d+\s*个/.test(probe.countText), probe.countText);
+  ctx.note('v1.4.0 配置模板契约探测（信息，非问题）', JSON.stringify(probe));
+  return probe.missingMethods.length === 0 && probe.runtime.present
+    && probe.missingIds.length === 0 && !!probe.snapshotKeys;
+}
+
+
 
 
 

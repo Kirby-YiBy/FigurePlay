@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.3.4-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.3.4-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.4.0-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.4.0-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -222,6 +222,10 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
         else {
             Write-Info '应用矢量 E2E  : skipped（MATLAB .fig 不可用）'
         }
+    }
+    if ($report.vectorPdf -and $report.vectorPdf.labelCenter) {
+        $lbl = $report.vectorPdf.labelCenter
+        Write-Info ("编号中心      : ok={0} (a)={1}mm/err={2}mm (b)={3}mm/err={4}mm 容差={5}mm" -f $lbl.ok, $lbl.checks.centerAMm, $lbl.checks.centerAErrorMm, $lbl.checks.centerBMm, $lbl.checks.centerBErrorMm, $lbl.checks.toleranceMm)
     }
     if ($report.appearanceSmoke) {
         $smoke = $report.appearanceSmoke

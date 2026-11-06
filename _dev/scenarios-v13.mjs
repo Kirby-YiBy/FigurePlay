@@ -1848,6 +1848,437 @@ const appearanceScenario = {
   },
 };
 
+/* ----------------------------- X 配置模板 ----------------------------- */
+const configProfileScenario = {
+  code: 'X',
+  name: 'config-profiles',
+  title: '配置模板',
+  description: '保存当前配置（名称/说明/参数摘要）到 localStorage 并持久；应用配置（有图片 confirm）恢复网格/编号/字体/导出并重排图片；导出 JSON payload（type/schemaVersion/name/description/appVersion/createdAt/layout/label/export，无 cells/dataURL）可重新导入；错误 type/未来 schemaVersion/非法 JSON 中文报错不落盘；API 与主题/历史/自动保存隔离',
+  async run(ctx) {
+    const { page } = ctx;
+    const configItem = (name) => page.locator('#config-list .config-item').filter({ hasText: name }).first();
+    const configAction = async (name, action) => {
+      await configItem(name).locator(`[data-action="${action}"]`).click();
+    };
+    const waitDialogClosed = async () => {
+      await app.waitFor(page, () => {
+        const dialog = document.getElementById('config-dialog');
+        return !!dialog && dialog.open === false;
+      }, null, { timeout: 6000, label: 'config dialog closed' });
+    };
+    const waitErrorToast = async (pattern) => {
+      await page.waitForFunction((src) => {
+        const toast = document.getElementById('toast');
+        return !!toast && new RegExp(src).test(toast.textContent || '');
+      }, pattern, { timeout: 6000 });
+      return app.getToast(page);
+    };
+
+    await app.openAppReady(page);
+    if (!(await app.ensureV140(ctx, page))) return;
+    await app.clearConfigProfiles(page);
+    await app.api.clearAll(page);
+
+    // 1) 目标配置：3×2 / 170mm / 列距3 行距1 / 底部编号 Arial 11pt / PDF 300DPI 裁边 1.5mm 矢量
+    await app.api.setLayout(page, 3, 2);
+    await app.setLayoutOptions(page, { margin: 0, colGap: 3, rowGap: 1 });
+    await app.setLabelScheme(page, 'number-dot');
+    await app.setNumberInput(page, '#label-start', 2);
+    await app.setSelect(page, '#label-font', 'arial');
+    await app.setNumberInput(page, '#label-size', 11);
+    await app.clickPos(page, 'bc');
+    await app.clickFormat(page, 'pdf');
+    await app.setNumberInput(page, '#dpi-input', 300);
+    await app.setCheckbox(page, '#pdf-trim-toggle', true);
+    await app.setNumberInput(page, '#pdf-trim-margin', 1.5);
+    await app.setCheckbox(page, '#vector-pdf-toggle', true);
+    await page.waitForTimeout(200);
+
+    const target = await app.getConfigSnapshot(page);
+    ctx.check('当前配置快照：3×2、170mm、列距3/行距1、Arial 11pt、PDF 300DPI 裁边1.5 矢量',
+      target.layout.rows === 3 && target.layout.cols === 2
+      && target.layout.widthMm === 170 && target.layout.colGap === 3 && target.layout.rowGap === 1
+      && target.label.fontFamily === 'arial' && target.label.fontSizePt === 11
+      && target.label.scheme === 'number-dot' && target.label.position === 'bc'
+      && target.export.format === 'pdf' && target.export.dpi === 300
+      && target.export.trimPdf === true && target.export.trimMarginMm === 1.5
+      && target.export.vectorPdf === true,
+      { layout: target.layout, label: target.label, export: target.export });
+
+    // 2) 保存当前配置到本机
+    await app.openConfigDialog(page, 'save');
+    let cfg = await app.getConfigUiState(page);
+    ctx.check('配置对话框打开，保存摘要包含当前参数（3 行×2 列/170mm/列距/行距/Arial/PDF/裁边/矢量）',
+      cfg.ui.dialogOpen === true
+      && /3 行 × 2 列/.test(cfg.ui.saveSummary || '')
+      && /170\s*mm/.test(cfg.ui.saveSummary || '')
+      && /列距 3 \/ 行距 1 mm/.test(cfg.ui.saveSummary || '')
+      && /Arial 11pt/.test(cfg.ui.saveSummary || '')
+      && /PDF 300 DPI/.test(cfg.ui.saveSummary || '')
+      && /自动裁边\s*1\.5mm/.test(cfg.ui.saveSummary || '')
+      && /矢量/.test(cfg.ui.saveSummary || ''),
+      cfg.ui.saveSummary);
+    await app.setConfigForm(page, {
+      name: '3×2 论文模板',
+      description: 'Arial 11pt · 底部编号 · 列距3 行距1 · PDF 300DPI 自动裁边1.5mm 矢量',
+    });
+    cfg = await app.saveCurrentConfig(page);
+    ctx.check('保存到本机：#config-count=本机 1 个、localStorage 1 条配置',
+      /本机\s*1\s*个/.test(cfg.ui.countText || '') && cfg.storage.length === 1
+      && cfg.storage.names[0] === '3×2 论文模板',
+      { countText: cfg.ui.countText, storage: cfg.storage.names });
+    ctx.check('保存后列表项显示名称/说明/参数摘要',
+      cfg.ui.listItems.length === 1
+      && cfg.ui.listItems[0].name === '3×2 论文模板'
+      && /Arial 11pt/.test(cfg.ui.listItems[0].desc || '')
+      && /3 行 × 2 列/.test(cfg.ui.listItems[0].summary || '')
+      && cfg.ui.listItems[0].actions.map((item) => item.action).join(',') === 'apply,export,delete',
+      cfg.ui.listItems[0]);
+    ctx.check('保存状态/提示为「已保存」',
+      /已保存/.test(cfg.ui.saveStatus || ''), cfg.ui.saveStatus);
+    const storedProfile = cfg.storage.profilesPayload[0] || {};
+    ctx.check('localStorage 配置结构完整（type/schemaVersion/name/description/appVersion/createdAt/layout/label/export）',
+      storedProfile.type === 'figureplay-config' && storedProfile.schemaVersion === 1
+      && storedProfile.name === '3×2 论文模板' && /Arial 11pt/.test(storedProfile.description || '')
+      && storedProfile.appVersion === '1.4.0' && !!Date.parse(storedProfile.createdAt || '')
+      && storedProfile.layout.rows === 3 && storedProfile.layout.cols === 2
+      && storedProfile.label.fontFamily === 'arial'
+      && storedProfile.export.format === 'pdf',
+      storedProfile);
+    ctx.check('本机配置存储不含图片/cells/dataURL',
+      !/dataUrl|dataURL|cells|base64|image\//.test(String(cfg.storage.raw || '')),
+      { length: String(cfg.storage.raw || '').length });
+    await app.closeConfigDialog(page);
+    await waitDialogClosed();
+
+    // 3) reload 后本机配置仍在（localStorage 持久）
+    await app.reloadAppReady(page);
+    cfg = await app.getConfigUiState(page);
+    ctx.check('reload 后本机配置持久（count=1、名称仍为 3×2 论文模板）',
+      /本机\s*1\s*个/.test(cfg.ui.countText || '') && cfg.storage.length === 1
+      && cfg.storage.names[0] === '3×2 论文模板',
+      { countText: cfg.ui.countText, storage: cfg.storage.names });
+    await app.openConfigDialog(page);
+    cfg = await app.getConfigUiState(page);
+    ctx.check('reload 后列表项/摘要仍可读',
+      cfg.ui.listItems.length === 1 && /Arial 11pt/.test(cfg.ui.listItems[0].summary || ''),
+      cfg.ui.listItems[0] && cfg.ui.listItems[0].summary);
+    await app.closeConfigDialog(page);
+    await waitDialogClosed();
+
+    // 4) 修改当前配置 → 有图片时应用保存配置（confirm accept）
+    await app.api.clearAll(page);
+    await app.api.setLayout(page, 3, 2);
+    await app.uploadFiles(page, [samplePath('sample-1.png'), samplePath('sample-2.png')], null, 2);
+    const namesBefore = (await app.api.getState(page)).cells.filter(Boolean).map((cell) => cell.name);
+    await app.api.setLayout(page, 2, 2);
+    await app.setLayoutOptions(page, { colGap: 0, rowGap: 0 });
+    await app.setLabelScheme(page, 'alpha-paren');
+    await app.clickFormat(page, 'png');
+    const confirmMessages = [];
+    page.once('dialog', async (dialog) => {
+      confirmMessages.push(dialog.message());
+      await dialog.accept();
+    });
+    await app.openConfigDialog(page);
+    await configAction('3×2 论文模板', 'apply');
+    await waitDialogClosed();
+    cfg = await app.waitConfigState(page, (state) => state.ui.activeName === '3×2 论文模板'
+      && state.project && state.project.rows === 3 && state.project.cols === 2,
+    null, { label: 'apply saved config with confirm' });
+    const appliedState = await app.api.getState(page);
+    ctx.check('应用配置时有图片且网格变化 → 出现 confirm（重排/可能丢弃提示）并被接受',
+      confirmMessages.length === 1 && /重排|丢弃/.test(confirmMessages[0] || ''),
+      confirmMessages);
+    ctx.check('应用后网格/间距/编号/字体恢复（3×2、列距3、行距1、number-dot、Arial 11pt、bc）',
+      appliedState.layout.rows === 3 && appliedState.layout.cols === 2
+      && appliedState.layout.colGap === 3 && appliedState.layout.rowGap === 1
+      && appliedState.label.scheme === 'number-dot' && appliedState.label.fontFamily === 'arial'
+      && appliedState.label.fontSizePt === 11 && appliedState.label.position === 'bc',
+      { layout: appliedState.layout, label: appliedState.label });
+    ctx.check('应用后导出设置恢复（PDF/300DPI/裁边1.5/矢量）',
+      appliedState.export.format === 'pdf' && appliedState.export.dpi === 300
+      && appliedState.export.trimPdf === true && appliedState.export.trimMarginMm === 1.5
+      && appliedState.export.vectorPdf === true,
+      appliedState.export);
+    const namesAfter = appliedState.cells.filter(Boolean).map((cell) => cell.name);
+    ctx.check('应用配置后图片数量与顺序保持（2 张、按行重排顺序不变）',
+      namesAfter.length === 2 && JSON.stringify(namesAfter) === JSON.stringify(namesBefore),
+      { before: namesBefore, after: namesAfter });
+    ctx.check('应用后左侧「最近应用」显示配置名称/说明',
+      cfg.ui.activeVisible === true && cfg.ui.activeName === '3×2 论文模板'
+      && /Arial 11pt/.test(cfg.ui.activeDesc || ''),
+      { active: cfg.ui.activeName, desc: cfg.ui.activeDesc });
+
+    // 5) 无图片时应用配置不需要 confirm
+    await app.api.clearAll(page);
+    await app.api.setLayout(page, 2, 2);
+    let noConfirmCount = 0;
+    page.once('dialog', async (dialog) => { noConfirmCount += 1; await dialog.dismiss(); });
+    await app.openConfigDialog(page);
+    await configAction('3×2 论文模板', 'apply');
+    await waitDialogClosed();
+    cfg = await app.waitConfigState(page, (state) => state.project && state.project.rows === 3,
+      null, { label: 'apply config without images' });
+    ctx.check('无图片时应用配置不弹 confirm 且网格恢复 3×2',
+      noConfirmCount === 0 && cfg.project.rows === 3 && cfg.project.cols === 2,
+      { noConfirmCount, rows: cfg.project.rows });
+
+    // 6) 导出配置 JSON（UI 下载；关闭原生 picker 以走下载回退）
+    await app.openConfigDialog(page);
+    cfg = await app.getConfigUiState(page);
+    await app.installFakeSavePicker(page, { mode: 'remove' });
+    const exportButton = configItem('3×2 论文模板').locator('[data-action="export"]');
+    const download = await waitForDownload(page, () => exportButton.click(), { timeout: 30000 });
+    const configFile = await saveDownload(download, 'fp-v14-config-export.figureplay.json', { dir: ctx.exportsDir });
+    await app.restoreSavePicker(page);
+    const configText = fs.readFileSync(configFile.path, 'utf8');
+    let configJson = null;
+    try { configJson = JSON.parse(configText); } catch (err) { configJson = null; }
+    addExportEvidence(ctx, {
+      label: '配置模板 JSON（导出）', format: 'json', filename: configFile.filename,
+      path: configFile.path, size: configFile.size, verifierOk: true, failedChecks: [],
+      verifier: { ok: true, checks: [], details: { schemaVersion: configJson && configJson.schemaVersion } },
+    });
+    ctx.check('导出 JSON 文件名 .figureplay.json 且为合法 JSON',
+      /\.figureplay\.json$/i.test(configFile.suggestedFilename || '') && !!configJson,
+      { filename: configFile.suggestedFilename, size: configFile.size });
+    ctx.check('导出 payload：type/schemaVersion/name/description/appVersion/createdAt/layout/label/export 完整',
+      !!configJson && configJson.type === 'figureplay-config' && configJson.schemaVersion === 1
+      && configJson.name === '3×2 论文模板' && /Arial 11pt/.test(configJson.description || '')
+      && configJson.appVersion === '1.4.0' && !!Date.parse(configJson.createdAt || '')
+      && configJson.layout.rows === 3 && configJson.layout.cols === 2
+      && configJson.label.fontFamily === 'arial' && configJson.export.format === 'pdf'
+      && Object.keys(configJson).sort().join(',') === 'appVersion,createdAt,description,export,label,layout,name,schemaVersion,type',
+      configJson && Object.keys(configJson));
+    ctx.check('导出 JSON 不含图片/cells/dataURL/base64',
+      !/dataUrl|dataURL|cells|base64|image\//.test(configText),
+      { length: configText.length });
+    await app.closeConfigDialog(page);
+    await waitDialogClosed();
+
+    // 7) 导入 JSON：先显示名称/说明/摘要预览；保存/应用
+    await app.api.setLayout(page, 2, 2);
+    await app.openConfigDialog(page);
+    await app.importConfigFile(page, configFile.path);
+    cfg = await app.waitConfigState(page, (state) => state.ui.importPreviewVisible === true,
+      null, { label: 'config import preview' });
+    ctx.check('导入有效 JSON：先显示预览（名称/说明/参数摘要）且不立即落盘',
+      cfg.ui.importName === '3×2 论文模板'
+      && /Arial 11pt/.test(cfg.ui.importDesc || '')
+      && /3 行 × 2 列/.test(cfg.ui.importSummary || '')
+      && /来源版本 1\.4\.0/.test(cfg.ui.importMeta || '')
+      && cfg.storage.length === 1 && cfg.ui.importApplyVisible === true
+      && cfg.ui.importSaveVisible === true,
+      { preview: cfg.ui, storage: cfg.storage.names });
+    await page.locator('#config-import-cancel').click();
+    cfg = await app.waitConfigState(page, (state) => state.ui.importPreviewVisible === false,
+      null, { label: 'import preview cancel' });
+    ctx.check('取消导入：预览隐藏、本机配置数量不变',
+      cfg.ui.importPreviewVisible === false && cfg.storage.length === 1);
+
+    // 导入后应用
+    await app.importConfigFile(page, configFile.path);
+    await app.waitConfigState(page, (state) => state.ui.importPreviewVisible === true, null,
+      { label: 'import preview again' });
+    await page.locator('#config-import-apply').click();
+    await waitDialogClosed();
+    cfg = await app.waitConfigState(page, (state) => state.project && state.project.rows === 3
+      && state.project.cols === 2, null, { label: 'apply imported config' });
+    ctx.check('导入预览点「应用此配置」：网格恢复 3×2、配置数量不变',
+      cfg.project.rows === 3 && cfg.project.cols === 2 && cfg.storage.length === 1,
+      { project: cfg.project, count: cfg.storage.length });
+
+    // 导入后保存到本机
+    await app.openConfigDialog(page);
+    await app.importConfigFile(page, configFile.path);
+    await app.waitConfigState(page, (state) => state.ui.importPreviewVisible === true, null,
+      { label: 'import preview for save' });
+    await page.locator('#config-import-save').click();
+    cfg = await app.waitConfigState(page, (state) => state.storage.length === 2,
+      null, { label: 'import save to local' });
+    ctx.check('导入后点「保存到本机」：数量 1→2 且 localStorage 持久',
+      cfg.storage.length === 2 && /本机\s*2\s*个/.test(cfg.ui.countText || ''),
+      { countText: cfg.ui.countText, names: cfg.storage.names });
+
+    // 8) 无效导入：错误 type / 未来 schemaVersion / 非法 JSON
+    const invalidDir = path.join(ctx.runDir, 'tmp');
+    const badTypeFile = await app.writeConfigJsonFile(invalidDir, 'bad-type.figureplay.json', {
+      type: 'not-figureplay', schemaVersion: 1, layout: { rows: 2, cols: 2 },
+    });
+    const futureFile = await app.writeConfigJsonFile(invalidDir, 'future-version.figureplay.json', {
+      type: 'figureplay-config', schemaVersion: 99, layout: { rows: 2, cols: 2 },
+    });
+    const badJsonFile = await app.writeConfigJsonFile(invalidDir, 'invalid.figureplay.json', '{bad json');
+    const invalidCases = [
+      { label: '错误 type', file: badTypeFile, pattern: '不是 FigurePlay 配置文件|type' },
+      { label: '未来 schemaVersion', file: futureFile, pattern: '版本较新|升级 FigurePlay' },
+      { label: '非法 JSON', file: badJsonFile, pattern: 'JSON 解析失败' },
+    ];
+    const storageBeforeErrors = cfg.storage.raw;
+    for (const item of invalidCases) {
+      await app.importConfigFile(page, item.file);
+      const toast = await waitErrorToast(item.pattern);
+      const afterError = await app.getConfigUiState(page);
+      ctx.check(`无效导入（${item.label}）：中文错误提示且不落盘`,
+        /[\u4e00-\u9fff]/.test(toast.text || '')
+        && afterError.storage.length === 2
+        && afterError.storage.raw === storageBeforeErrors
+        && afterError.ui.importPreviewVisible === false,
+        { toast: toast.text, count: afterError.storage.length });
+    }
+    await app.closeConfigDialog(page);
+    await waitDialogClosed();
+    await app.clearConfigProfiles(page);
+
+    // 9) 配置 API：getConfigSnapshot / normalizeConfigSnapshot / applyConfigSnapshot
+    const apiSnap = await app.getConfigSnapshot(page);
+    ctx.check('API getConfigSnapshot 返回 layout/label/export（无 cells/filename）',
+      !!apiSnap && JSON.stringify(Object.keys(apiSnap)) === JSON.stringify(['layout', 'label', 'export'])
+      && !('cells' in apiSnap) && !('filename' in (apiSnap.export || {})),
+      { keys: apiSnap && Object.keys(apiSnap) });
+    const normalized = await app.normalizeConfigSnapshot(page, {
+      layout: { rows: 2, cols: 2, widthMm: 120, colGap: 0, rowGap: 0 },
+      label: { scheme: 'alpha-paren', fontFamily: 'times' },
+      export: { format: 'png', dpi: 150, trimPdf: false },
+    });
+    ctx.check('API normalizeConfigSnapshot：补全/规范化 layout/label/export',
+      normalized.layout.rows === 2 && normalized.layout.cols === 2
+      && normalized.layout.widthMm === 120 && normalized.label.scheme === 'alpha-paren'
+      && normalized.label.fontFamily === 'times' && normalized.export.format === 'png'
+      && normalized.export.dpi === 150,
+      { layout: normalized.layout, label: normalized.label, export: normalized.export });
+    const applied = await app.applyConfigSnapshot(page, {
+      layout: { rows: 2, cols: 2, widthMm: 120, colGap: 0, rowGap: 0 },
+      label: { scheme: 'alpha-paren', fontFamily: 'times' },
+      export: { format: 'png', dpi: 150, trimPdf: false },
+    });
+    ctx.check('API applyConfigSnapshot：返回 ok/layoutChanged 且网格/编号/导出生效',
+      applied.ok === true && applied.layoutChanged === true
+      && applied.layout.rows === 2 && applied.label.scheme === 'alpha-paren'
+      && applied.export.format === 'png',
+      { result: applied });
+    const appliedAgain = await app.applyConfigSnapshot(page, {
+      layout: { rows: 2, cols: 2, widthMm: 120, colGap: 0, rowGap: 0 },
+      label: { scheme: 'alpha-paren', fontFamily: 'times' },
+      export: { format: 'png', dpi: 150, trimPdf: false },
+    });
+    ctx.check('API 重复应用同一配置：layoutChanged=false、dropped=0（无脏变化）',
+      appliedAgain.ok === true && appliedAgain.layoutChanged === false
+      && appliedAgain.dropped === 0,
+      appliedAgain);
+
+    // 10) 配置保存/应用不改变主题/外观；不写入项目自动保存；历史无脏记录
+    await app.setAppearance(page, 'dark', 'violet');
+    await app.api.clearAll(page);
+    await app.api.setLayout(page, 3, 2);
+    await app.waitHistoryCommit(page);
+    const historyBeforeSave = await app.getHistoryState(page);
+    await app.openConfigDialog(page, 'save');
+    await app.setConfigForm(page, { name: '主题隔离配置', description: '深色主题下保存' });
+    await app.saveCurrentConfig(page);
+    await app.closeConfigDialog(page);
+    await waitDialogClosed();
+    cfg = await app.getConfigUiState(page);
+    ctx.check('保存配置不改变主题/外观（仍为 dark + violet）',
+      cfg.appearance && cfg.appearance.mode === 'dark' && cfg.appearance.theme === 'dark'
+      && cfg.appearance.accent === 'violet' && cfg.htmlTheme === 'dark'
+      && cfg.htmlAccent === 'violet',
+      { appearance: cfg.appearance, theme: cfg.htmlTheme, accent: cfg.htmlAccent });
+    ctx.check('保存配置不新增项目历史记录（undoCount 不变）',
+      JSON.stringify(cfg.history) === JSON.stringify(historyBeforeSave),
+      { before: historyBeforeSave, after: cfg.history });
+    await app.waitForAutosave(page, (saved) => !!saved.currentPage && Array.isArray(saved.pages),
+      { timeout: 12000, label: 'project autosave after config save' }).catch(() => null);
+    const savedProject = await app.readSavedSession(page);
+    const savedRaw = JSON.stringify(savedProject && savedProject.payload);
+    ctx.check('项目自动保存 payload 不含配置列表（configProfiles/figureplay-config）',
+      !!savedProject && !/configProfiles|figureplay-config/.test(savedRaw)
+      && (savedProject.pages || []).length >= 1,
+      { pages: savedProject && savedProject.pages && savedProject.pages.length,
+        hasConfig: /configProfiles|figureplay-config/.test(savedRaw) });
+
+    // 应用配置：主题不变，历史最多新增 1 步；重复应用同一配置不再新增历史
+    await app.setLabelScheme(page, 'number-dot');
+    await app.setSelect(page, '#label-font', 'calibri');
+    await app.clickFormat(page, 'png');
+    await app.waitHistoryCommit(page);
+    const historyBeforeApply = await app.getHistoryState(page);
+    await app.openConfigDialog(page);
+    await configAction('主题隔离配置', 'apply');
+    await waitDialogClosed();
+    await app.waitHistoryCommit(page);
+    let histAfterApply = await app.getHistoryState(page);
+    let lookAfterApply = await app.getAppearanceState(page);
+    const stateAfterApply = await app.api.getState(page);
+    ctx.check('应用配置后主题仍为 dark + violet',
+      lookAfterApply.html.theme === 'dark' && lookAfterApply.html.accent === 'violet',
+      lookAfterApply.html);
+    ctx.check('应用配置恢复保存时参数（3×2 / 编号 alpha-paren / Times / PNG）',
+      stateAfterApply.layout.rows === 3 && stateAfterApply.layout.cols === 2
+      && stateAfterApply.label.scheme === 'alpha-paren'
+      && stateAfterApply.label.fontFamily === 'times'
+      && stateAfterApply.export.format === 'png',
+      { layout: stateAfterApply.layout, label: stateAfterApply.label, export: stateAfterApply.export });
+    ctx.check('应用配置产生的历史记录不超过 1 步（非多步脏记录）',
+      histAfterApply.undoCount <= historyBeforeApply.undoCount + 1,
+      { before: historyBeforeApply.undoCount, after: histAfterApply.undoCount });
+    await app.openConfigDialog(page);
+    await configAction('主题隔离配置', 'apply');
+    await waitDialogClosed();
+    await app.waitHistoryCommit(page);
+    const histAfterSame = await app.getHistoryState(page);
+    ctx.check('重复应用同一配置不再新增历史（历史去重）',
+      histAfterSame.undoCount === histAfterApply.undoCount,
+      { first: histAfterApply.undoCount, second: histAfterSame.undoCount });
+    const finalCfg = await app.getConfigUiState(page);
+    ctx.check('本机配置存储独立于项目（config key 有 1 条、session 不含配置）',
+      finalCfg.storage.length === 1 && finalCfg.storage.raw
+      && finalCfg.storage.sessionHasConfigKey === false,
+      { count: finalCfg.storage.length, sessionHasConfigKey: finalCfg.storage.sessionHasConfigKey });
+
+    // 11) 截图（对话框 + 导入预览）
+    await app.openConfigDialog(page);
+    await app.importConfigFile(page, configFile.path);
+    await app.waitConfigState(page, (state) => state.ui.importPreviewVisible === true, null,
+      { label: 'import preview for screenshot' });
+    await ctx.screenshot('config-profiles');
+    await page.locator('#config-import-cancel').click();
+    await app.closeConfigDialog(page);
+    await waitDialogClosed();
+
+    ctx.evidence.configProfiles = {
+      targetSnapshot: {
+        rows: target.layout.rows, cols: target.layout.cols, widthMm: target.layout.widthMm,
+        colGap: target.layout.colGap, rowGap: target.layout.rowGap,
+        font: target.label.fontFamily, fontSizePt: target.label.fontSizePt,
+        scheme: target.label.scheme, position: target.label.position,
+        format: target.export.format, dpi: target.export.dpi,
+        trimPdf: target.export.trimPdf, trimMarginMm: target.export.trimMarginMm,
+        vectorPdf: target.export.vectorPdf,
+      },
+      exportedJson: configJson
+        ? {
+          type: configJson.type, schemaVersion: configJson.schemaVersion,
+          name: configJson.name, appVersion: configJson.appVersion,
+          createdAt: configJson.createdAt, keys: Object.keys(configJson),
+        }
+        : null,
+      importPreview: { name: '3×2 论文模板', summary: /3 行 × 2 列/.test(cfg.ui.importSummary || '') },
+      invalidImports: invalidCases.map((item) => item.label),
+      history: {
+        beforeSave: historyBeforeSave.undoCount,
+        afterApply: histAfterApply.undoCount,
+        afterSameApply: histAfterSame.undoCount,
+      },
+      themeIsolation: { theme: 'dark', accent: 'violet' },
+      autosaveNoConfig: true,
+      appliedImages: { before: namesBefore, after: namesAfter },
+    };
+    await app.api.clearAll(page);
+  },
+};
+
 export const scenariosV13 = [
   gridCustomScenario,
   saveAsScenario,
@@ -1857,4 +2288,5 @@ export const scenariosV13 = [
   vectorPdfScenario,
   negativeGapScenario,
   appearanceScenario,
+  configProfileScenario,
 ];

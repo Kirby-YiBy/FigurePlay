@@ -377,6 +377,16 @@ namespace FigurePlay.Desktop.SelfTest
                         (cropResult.Value<string>("error") ?? "未知原因"));
                 }
 
+                // ---------------- v1.4.0 编号锚点/中心位置（3×2 bottom-center + crop 偏移） ----------------
+                JObject labelCenterResult = await RunVectorPdfLabelCenterChecksAsync();
+                result["labelCenter"] = labelCenterResult;
+                if (!labelCenterResult.Value<bool>("ok"))
+                {
+                    throw new InvalidOperationException(
+                        "编号中心位置测试失败：" +
+                        (labelCenterResult.Value<string>("error") ?? "未知原因"));
+                }
+
                 result["ok"] = true;
             }
             catch (Exception ex)

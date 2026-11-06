@@ -2379,6 +2379,64 @@
   }
 
   /** 构造交给桌面版 PowerPoint 矢量排版引擎的当前页 spec。 */
+  /* ================= 配置模板 ================= */
+  function snapshotConfig() {
+    syncPage();
+    const exp = FP.deepClone(state.export || {});
+    delete exp.filename;
+    return {
+      layout: FP.deepClone(state.layout),
+      label: FP.deepClone(state.label),
+      export: exp
+    };
+  }
+
+  function normalizeConfigSnapshot(raw) {
+    raw = raw || {};
+    const layout = normalizeLayout(Object.assign({}, state.layout, raw.layout || {}));
+    const label = normalizeLabel(Object.assign({}, state.label, raw.label || {}));
+    const exp = normalizeExport(Object.assign({}, state.export, raw.export || {}));
+    delete exp.filename;
+    return { layout: layout, label: label, export: exp };
+  }
+
+  function applyConfigSnapshot(raw) {
+    const next = normalizeConfigSnapshot(raw);
+    const layout = next.layout;
+    const oldGrid = state.layout.rows + 'x' + state.layout.cols + '|' +
+      JSON.stringify(state.layout.merges || []);
+    const newGrid = layout.rows + 'x' + layout.cols + '|' +
+      JSON.stringify(layout.merges || []);
+    const layoutChanged = oldGrid !== newGrid;
+    let dropped = 0;
+    if (layoutChanged) {
+      const images = panelOrder('row').map(function (p) { return state.cells[p.index]; }).filter(Boolean);
+      const anchors = FP.orderPanels(FP.computeGeometry(layout), 'row').map(function (p) { return p.index; });
+      state.cells = new Array(layout.rows * layout.cols).fill(null);
+      for (let i = 0; i < images.length; i++) {
+        if (i < anchors.length) state.cells[anchors[i]] = images[i];
+        else dropped++;
+      }
+      state.groups = [];
+      state.selectedCell = null;
+      multiSelect = [];
+    }
+    state.layout = layout;
+    state.label = next.label;
+    state.export = next.export;
+    renderAll();
+    scheduleSave();
+    scheduleHistory();
+    return {
+      ok: true,
+      layoutChanged: layoutChanged,
+      dropped: dropped,
+      layout: FP.deepClone(layout),
+      label: FP.deepClone(next.label),
+      export: FP.deepClone(next.export)
+    };
+  }
+
   function buildVectorPdfSpec(cropOverride) {
     if (!(FP.desktop && FP.desktop.available)) return { ok: false, reason: '需要桌面版 FigurePlay' };
     if (state.export.vectorPdf === false) return { ok: false, reason: '已关闭矢量 PDF' };
@@ -3970,6 +4028,15 @@
       },
       getAppearance: function () {
         return FP.appearance.get();
+      },
+      getConfigSnapshot: function () {
+        return snapshotConfig();
+      },
+      normalizeConfigSnapshot: function (raw) {
+        return normalizeConfigSnapshot(raw);
+      },
+      applyConfigSnapshot: function (raw) {
+        return applyConfigSnapshot(raw);
       }
     };
     window.__FIGPLAY__ = api;

@@ -97,6 +97,22 @@
       </button>
     </section>
 
+    <section class="card" id="config-card">
+      <div class="card-head">
+        <h2>配置模板</h2>
+        <span class="card-sub" id="config-count">本机 0 个</span>
+      </div>
+      <p class="cell-hint" style="margin:2px 0 9px;">保存网格、编号、字体、间距和导出设置（不含图片），可导出 JSON 迁移到其他电脑。</p>
+      <div class="config-card-actions">
+        <button type="button" class="btn btn-sm" id="btn-config-save">保存当前配置…</button>
+        <button type="button" class="btn btn-sm" id="btn-config-manage">管理 / 导入…</button>
+      </div>
+      <div class="config-active" id="config-active" hidden>
+        <span>最近应用：<b id="config-active-name"></b></span>
+        <small id="config-active-desc"></small>
+      </div>
+    </section>
+
     <section class="card">
       <div class="card-head">
         <h2>网格布局</h2>
@@ -508,6 +524,7 @@
       <li>点击预览中的空子图会弹出「粘贴小画布」：按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 直接粘贴 MATLAB 图窗 / 截图，也可以拖入文件或选择本地图片。</li>
       <li>按住 <kbd>Ctrl</kbd>/<kbd>Shift</kbd> 点击多个子图可多选，再合并成跨列大图（如 2×3 首行跨 3 列），或批量套用编号。</li>
       <li>顶部「＋ 新页 / 复制页 / 删除页」可建立多页图集；双击页签改名，导出时可选当前页或全部页。</li>
+      <li>配置模板：左侧「配置模板」可把当前网格、编号、字体、间距和导出设置保存到本机，也可导出/导入 <b>.figureplay.json</b> 到其他电脑；配置不含图片，导入时会显示名称、说明和参数摘要。</li>
       <li>界面外观：顶栏调色板按钮可选择<b>浅色 / 深色 / 跟随系统</b>，并提供蓝、靛蓝、青绿、翠绿、紫罗兰、玫红、琥珀主题色；切换只改 CSS 变量，不会重绘图稿，也不影响导出图形颜色。</li>
       <li>网格行/列可直接输入（1–500，单页最多 2500 格）；编号超出页面时会自动加页距，也可关闭自动后手动填四边页距。列/行间距支持负值（-50～80 mm），可抵消图片自带的白边。</li>
       <li>导出时可勾选「自动裁剪 PDF 白边」（按实际内容墨迹裁剪，类似 pdfcrop；0 mm 会保留约 1 mm 防裁字安全边距）；滑块旁的百分比/数值框都可以直接输入。</li>
@@ -663,6 +680,54 @@
   </div>
 </dialog>
 
+<dialog class="help-dialog editor-dialog config-dialog" id="config-dialog">
+  <div class="help-head">
+    <h2>配置模板</h2>
+    <button type="button" class="btn btn-ghost btn-sm" id="config-dialog-close">关闭</button>
+  </div>
+  <div class="help-body config-body">
+    <section class="config-save-box">
+      <h3>保存当前配置</h3>
+      <label class="config-field">
+        <span>名称</span>
+        <input type="text" id="config-name" maxlength="60" placeholder="例如：3×2 论文图模板">
+      </label>
+      <label class="config-field">
+        <span>说明（可选）</span>
+        <textarea id="config-desc" maxlength="500" rows="2" placeholder="例如：Arial 11pt、底部编号、列距0、行距1、PDF 300DPI 自动裁边"></textarea>
+      </label>
+      <p class="config-summary" id="config-save-summary"></p>
+      <div class="config-save-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="config-save-current">保存到本机</button>
+        <span class="config-status" id="config-save-status"></span>
+      </div>
+    </section>
+
+    <h3 class="config-list-title">已保存配置</h3>
+    <div class="config-list" id="config-list"></div>
+
+    <div class="config-import-row">
+      <button type="button" class="btn btn-sm" id="config-import-btn">从 JSON 导入…</button>
+      <input type="file" id="config-file-input" accept=".json,application/json" hidden>
+      <span class="config-import-hint">配置文件只含网格/编号/导出设置，不含图片；导出 JSON 后可复制到其他电脑。</span>
+    </div>
+
+    <div class="config-import-preview" id="config-import-preview" hidden>
+      <div class="config-import-preview-head">
+        <b id="config-import-name"></b>
+        <span id="config-import-meta"></span>
+      </div>
+      <p id="config-import-desc"></p>
+      <p class="config-import-summary" id="config-import-summary"></p>
+      <div class="config-import-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="config-import-apply">应用此配置</button>
+        <button type="button" class="btn btn-sm" id="config-import-save">保存到本机</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="config-import-cancel">取消</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
 <script src="vendor/pako.min.js"></script>
 <script src="vendor/UTIF.js"></script>
 <script src="js/util.js"></script>
@@ -677,5 +742,6 @@
 <script src="js/export.js"></script>
 <script src="js/demo.js"></script>
 <script src="js/app.js"></script>
+<script src="js/config-profiles.js"></script>
 </body>
 </html>

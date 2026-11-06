@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -542,10 +542,62 @@ namespace FigurePlay.Desktop.Bridge
                 int labelIndex = 0;
                 foreach (VectorPdfLabel label in spec.Labels)
                 {
-                    double left = (label.BoxXmm - offsetX) * MmToPt;
-                    double top = (label.BoxYmm - offsetY) * MmToPt;
-                    double width = Math.Max(1.0, label.BoxWmm * MmToPt);
-                    double height = Math.Max(1.0, label.BoxHmm * MmToPt);
+                    // v1.4.0 修复：app 的 BoxXmm 是带 pad 的排版盒，不能直接当文本框左边界。
+                    // - 无背景：按真实锚点 label.XMm + 对齐方式定位，文本框至少 30mm 宽（center 居中）；
+                    // - 有背景：背景块必须贴合 app 原有 box，不能扩成 30mm。
+                    bool hasBackground = !(string.IsNullOrEmpty(label.Bg) ||
+                                           string.Equals(label.Bg, "none", StringComparison.OrdinalIgnoreCase));
+                    double labelLeftMm;
+                    double labelTopMm;
+                    double labelWidthMm;
+                    double labelHeightMm;
+                    if (hasBackground)
+                    {
+                        labelLeftMm = label.BoxXmm;
+                        labelTopMm = label.BoxYmm;
+                        labelWidthMm = Math.Max(label.BoxWmm, 1.0);
+                        labelHeightMm = Math.Max(label.BoxHmm, 1.0);
+                    }
+                    else
+                    {
+                        labelWidthMm = Math.Max(label.BoxWmm + 10.0, 30.0);
+                        labelHeightMm = Math.Max(label.BoxHmm, 5.0);
+                        labelTopMm = label.BoxYmm;
+                        string labelAlign = string.IsNullOrEmpty(label.Align)
+                            ? "left"
+                            : label.Align.Trim().ToLowerInvariant();
+                        if (labelAlign == "center")
+                        {
+                            labelLeftMm = label.XMm - labelWidthMm / 2.0;
+                        }
+                        else if (labelAlign == "right")
+                        {
+                            labelLeftMm = label.XMm - labelWidthMm;
+                        }
+                        else
+                        {
+                            labelLeftMm = label.XMm;
+                        }
+                    }
+
+                    double left = (labelLeftMm - offsetX) * MmToPt;
+                    double top = (labelTopMm - offsetY) * MmToPt;
+                    double width = Math.Max(1.0, labelWidthMm * MmToPt);
+                    double height = Math.Max(1.0, labelHeightMm * MmToPt);
+                    Trace(string.Format(
+                        "label[{0}] align={1} anchorX={2:0.###} cropX={3:0.###} leftMm={4:0.###} widthMm={5:0.###} topMm={6:0.###}",
+                        labelIndex, label.Align, label.XMm, offsetX, labelLeftMm, labelWidthMm, labelTopMm));
+                    if (labelIndex < 4)
+                    {
+                        result.Diagnostics.Add(string.Format(
+                            "label[{0}] align={1} anchorX={2:0.###} boxLeft={3:0.###} -> leftMm={4:0.###} widthMm={5:0.###}",
+                            labelIndex,
+                            label.Align,
+                            label.XMm,
+                            label.BoxXmm,
+                            labelLeftMm,
+                            labelWidthMm));
+                    }
 
                     dynamic textbox;
                     try
@@ -643,6 +695,34 @@ namespace FigurePlay.Desktop.Bridge
                         }
 
                         textbox.Line.Visible = MsoFalse;
+
+                        // PowerPoint 在 WordWrap=false 时会把文本框宽度压缩到 ~0（实测 0.005pt），
+                        // 导致 Alignment 失效、文字以边框左侧为中心。文本/格式设置完成后必须写回几何。
+                        try
+                        {
+                            textbox.Width = (float)width;
+                            textbox.Height = (float)height;
+                            textbox.Left = (float)left;
+                            textbox.Top = (float)top;
+                            textRange.ParagraphFormat.Alignment = AlignToPowerPoint(label.Align);
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+
+                        try
+                        {
+                            Trace(string.Format(
+                                "label[{0}] shape left={1:0.###} top={2:0.###} width={3:0.###} height={4:0.###} align={5}",
+                                labelIndex, textbox.Left, textbox.Top, textbox.Width, textbox.Height,
+                                textRange.ParagraphFormat.Alignment));
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+
                     }
                     catch (Exception ex)
                     {
