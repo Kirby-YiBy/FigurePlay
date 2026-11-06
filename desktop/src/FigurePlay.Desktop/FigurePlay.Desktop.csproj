@@ -15,9 +15,9 @@
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <DebugType>embedded</DebugType>
     <Deterministic>true</Deterministic>
-    <Version>1.5.0</Version>
-    <FileVersion>1.5.0.0</FileVersion>
-    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <Version>1.5.1</Version>
+    <FileVersion>1.5.1.0</FileVersion>
+    <AssemblyVersion>1.5.1.0</AssemblyVersion>
     <AssemblyTitle>FigurePlay 桌面版</AssemblyTitle>
     <Product>FigurePlay</Product>
     <Description>FigurePlay 论文子图排版桌面版（WebView2 外壳 + 原生剪贴板桥）</Description>
@@ -29,7 +29,8 @@
   <ItemGroup>
     <!-- PowerPoint COM 使用 dynamic（IDispatch late binding），需要 Microsoft.CSharp -->
     <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Net.Http" />
+
   </ItemGroup>
 
   <ItemGroup>

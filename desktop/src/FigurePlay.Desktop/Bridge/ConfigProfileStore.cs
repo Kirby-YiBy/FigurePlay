@@ -20,11 +20,15 @@ namespace FigurePlay.Desktop.Bridge
         public const int MaxBytes = 2 * 1024 * 1024;
         public const int MaxBackups = 20;
 
-        public ConfigProfileStore(bool selfTest, string outDir)
+        public ConfigProfileStore(bool selfTest, string outDir, string dataDirOverride = null)
         {
             if (selfTest)
             {
                 ConfigDir = Path.Combine(string.IsNullOrEmpty(outDir) ? AppPaths.ExeDir : outDir, "configs");
+            }
+            else if (!string.IsNullOrEmpty(dataDirOverride))
+            {
+                ConfigDir = Path.Combine(dataDirOverride, "configs");
             }
             else
             {

@@ -23,7 +23,7 @@
    `WebView2Loader.dll`、`wwwroot`），首次启动自解压到 `%LOCALAPPDATA%\FigurePlay\bin\app-<hash>`，
    从任意目录双击即可运行，不依赖旁边 dll/assets；仍依赖系统 **WebView2 Runtime**。
 
-> 本候选包内嵌的是 **FigurePlay 应用 v1.5.0**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
+> 本候选包内嵌的是 **FigurePlay 应用 v1.5.1**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
 > ink 裁剪并入编号排版盒 + 至少 1mm 安全边距、行/列间距支持 -50～80mm、负间距下选中/悬停顶层描边、
 > 界面外观（浅色/深色/跟随系统 + 7 种主题色）、配置模板（`js/config-profiles.js`）、
 > 矢量 PDF + crop、saveAs 开关、`.fig` EMF 保留等；v1.4.1 起 spec 携带预览文字 bbox 用于编号 WYSIWYG；
@@ -649,6 +649,34 @@ v1.5.0 selftest 新增证据：`updateChecks`（无配置不联网/HTTPS 强制/
 `dist\wwwroot` 24/24 与冻结源逐字节一致；app.js 168,367B `2B200B6B…`、config-profiles 24,175B
 `10221EDD…`、desktop.js 12,078B `08D6915E…`、updates.js 4,227B `6D983310…`、util 17,788B `58227AEC…`。
 双 selftest 均 exit 0（多文件 136.6s / 单文件 180.5s），冷导出 29.1s→0.78s，POWERPNT 残留 0。
+
+### 7.10 v1.5.1 关闭提示/托盘/原生保存
+
+- X 关闭提示改为自适应布局：按钮 AutoSize + 最小宽度，**「退出程序」完整显示**（selftest 校验按钮宽度/文字）；
+  最小化文案改为「最小化到托盘」，默认按钮仍是最小化。
+- 正常模式 NotifyIcon 托盘：右键菜单「显示主窗口 / 退出程序」、双击恢复、Hide/Show、首次最小化气泡提示；
+  selftest 不创建托盘、不弹 UI；prefs 仍写 `%APPDATA%\FigurePlay\prefs.json`。
+- `save-file` 原生保存桥：JS → Host `{type:'save-file',suggestedName,filterName,filterExtensions,base64}`，
+  宿主 SaveFileDialog 写文件 → `file-saved {ok,path,bytes,canceled,error}`；selftest 自动写隔离
+  `<outDir>\save-file`，校验路径安全/非法 base64 拒绝，不弹真实对话框；允许大工程文件（上限 512MB）。
+- 隔离正常模式实测（single exe + `--data-dir/--webview-data-dir` 指向临时目录）：
+  记住退出 → 启动器 exit 0；记住最小化到托盘 → 窗口隐藏、进程存活、无对话框；真实 APPDATA/WebView2 未写。
+  工程/配置/PNG 的正常保存均由 App 调用 `saveFile` 弹出选择框（对话框交互需人工确认，selftest 覆盖桥写文件逻辑）。
+
+### 7.11 v1.5.1 产物
+
+| 文件 | 大小 | SHA256 |
+| --- | --- | --- |
+| `dist\FigurePlay.exe` | 425,472 B | `FEF7834F9CA415D9CC89BB70CE43FB54C4A6D283E12A7A28B666DB1D02AFA01F` |
+| `dist-single\FigurePlay.exe` | 915,968 B | `7B68CF595563AFECDFFA5C35298AFC69E426E07A4E1E5B9BC6754978D712E26A` |
+| `FigurePlay-desktop-1.5.1-win-x64.zip` | 876,462 B | `D3E41B1BED808BC13316AFA9DAF406712CC2E7CF88DF64694F3BD7B15BF254BC` |
+| `FigurePlay-1.5.1-single-win-x64.zip` | 905,294 B | `D0DAFF2BB79A83654195DA34CF826B75F099A2D9C4F9801C95158E6D7707A4EF` |
+
+`dist\wwwroot` 25/25 逐字节一致；app.js 169,700B `9B0C9A33…`、desktop.js 14,779B `33141C77…`、
+config-profiles 24,871B `81DEF164…`、project-file 7,318B `DD15025A…`、logs 5,288B `76D5411E…`、util `8F979CA2…`。
+双 selftest exit 0（多文件 128.8s / 单文件 169.9s）；两个 zip 解压复跑 exit 0。
+真实 WebView2 桥 E2E：`__UPDATES__.check()` → update-info 21ms（latest=1.5.2），`downloadUpdate()` → update-downloaded
+13ms（SHA256 校验、manual=True、不覆盖测试 exe）；`FP.desktop.saveFile()` 工程/配置/PNG 分别 9/2/2ms 立即 resolve。
 
 ---
 

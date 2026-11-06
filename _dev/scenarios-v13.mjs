@@ -997,6 +997,10 @@ const vectorPdfScenario = {
 
     await app.setNumberInput(page, '#filename-input', 'fp-v13-vector');
     await app.installFakeSavePicker(page, { mode: 'handle' });
+    // v1.5.1 桌面桥新增 saveFile 会优先走宿主保存；这里验证 fake handle，先移除宿主方法
+    await page.evaluate(() => {
+      if (window.FP && window.FP.desktop) delete window.FP.desktop.saveFile;
+    });
 
     // 第一次导出：矢量成功
     let vecCount = await app.bridgeMessageCount(page, 'export-vector-pdf');

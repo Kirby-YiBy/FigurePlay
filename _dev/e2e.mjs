@@ -41,6 +41,7 @@ import { scenariosV11 } from './scenarios-v11.mjs';
 import { scenariosV12 } from './scenarios-v12.mjs';
 import { scenariosV13 } from './scenarios-v13.mjs';
 import { scenariosV15 } from './scenarios-v15.mjs';
+import { scenariosV151 } from './scenarios-v151.mjs';
 
 const argv = process.argv.slice(2);
 const headed = argv.includes('--headed');
@@ -57,7 +58,8 @@ const finalV140 = argv.includes('--final-v140');
 const finalV141 = argv.includes('--final-v141');
 const finalV142 = argv.includes('--final-v142');
 const finalV150 = argv.includes('--final-v150');
-const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131 || finalV132 || finalV133 || finalV134 || finalV140 || finalV141 || finalV142 || finalV150;
+const finalV151 = argv.includes('--final-v151');
+const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131 || finalV132 || finalV133 || finalV134 || finalV140 || finalV141 || finalV142 || finalV150 || finalV151;
 const suiteArg = argv.find((item) => item.startsWith('--suite='));
 const suite = suiteArg ? suiteArg.slice('--suite='.length) : 'all';
 const onlyArg = argv.find((item) => item.startsWith('--only='));
@@ -71,9 +73,10 @@ const SUITES = {
   v12: { name: 'v1.2 新功能（M–O）', scenarios: scenariosV12 },
   v13: { name: 'v1.3 新功能（P–U）', scenarios: scenariosV13 },
   v15: { name: 'v1.5 新功能（AA–AF）', scenarios: scenariosV15 },
+  v151: { name: 'v1.5.1 新功能（AG–AJ）', scenarios: scenariosV151 },
   all: {
-    name: 'v1.0 回归 + v1.1 + v1.2 + v1.3 + v1.4 + v1.5 全量（A–AF）',
-    scenarios: [...scenarios, ...scenariosV11, ...scenariosV12, ...scenariosV13, ...scenariosV15],
+    name: 'v1.0 回归 + v1.1 + v1.2 + v1.3 + v1.4 + v1.5 全量（A–AJ）',
+    scenarios: [...scenarios, ...scenariosV11, ...scenariosV12, ...scenariosV13, ...scenariosV15, ...scenariosV151],
   },
 };
 if (!SUITES[suite]) {
@@ -118,27 +121,32 @@ const baseFinalNaming = finalV134
                 reportName: 'report.md', shotsName: 'shots', exportsName: 'exports', title: '',
               }))))));
 
-const finalNaming = finalV150
+const finalNaming = finalV151
   ? {
-    reportName: 'report-v1.5.0.md', shotsName: 'screens-v1.5.0', title: '（v1.5.0）',
-    keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v150',
+    reportName: 'report-v1.5.1.md', shotsName: 'screens-v1.5.1', title: '（v1.5.1）',
+    keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v151',
   }
-  : (finalV142
+  : (finalV150
     ? {
-      reportName: 'report-v1.4.2.md', shotsName: 'screens-v1.4.2', title: '（v1.4.2）',
-      keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v142',
+      reportName: 'report-v1.5.0.md', shotsName: 'screens-v1.5.0', title: '（v1.5.0）',
+      keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v150',
     }
-    : (finalV141
+    : (finalV142
       ? {
-        reportName: 'report-v1.4.1.md', shotsName: 'screens-v1.4.1', title: '（v1.4.1）',
-        keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v141',
+        reportName: 'report-v1.4.2.md', shotsName: 'screens-v1.4.2', title: '（v1.4.2）',
+        keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v142',
       }
-      : (finalV140
+      : (finalV141
         ? {
-          reportName: 'report-v1.4.0.md', shotsName: 'screens-v1.4.0', title: '（v1.4.0）',
-          keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v140',
+          reportName: 'report-v1.4.1.md', shotsName: 'screens-v1.4.1', title: '（v1.4.1）',
+          keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v141',
         }
-        : baseFinalNaming)));
+        : (finalV140
+          ? {
+            reportName: 'report-v1.4.0.md', shotsName: 'screens-v1.4.0', title: '（v1.4.0）',
+            keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v140',
+          }
+          : baseFinalNaming))));
 
 const log = (...args) => console.log(...args);
 const section = (title) => log(`\n=== ${title} ===`);
@@ -284,7 +292,7 @@ async function writeFinalReport(summary, runDir, naming = {}) {
   let prunedExports = 0;
   if (keepExportsInRun) {
     // E: 盘空间有限：只保留关键导出样例（各格式主样例 + 合并/分组/多页证据）
-    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v133-|^fp-v134-|^fp-v14-|^fp-v141-|^fp-v142-|^fp-v15-)/;
+    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v133-|^fp-v134-|^fp-v14-|^fp-v141-|^fp-v142-|^fp-v15-|^fp-v151-)/;
     for (const file of walkFiles(exportsSourceDir)) {
       if (keepExportRe.test(path.basename(file))) continue;
       try {
@@ -494,6 +502,22 @@ async function writeFinalReport(summary, runDir, naming = {}) {
       const ov = neg.overlay || {};
       lines.push(`- V 负间距：gap 0→${JSON.stringify(neg.negative.gap)}，cellW ${round(neg.base.cellW, 2)}→${round(neg.negative.cellW, 2)}mm，面板重叠 X=${round(neg.negative.overlapX, 2)}mm / Y=${round(neg.negative.overlapY, 2)}mm；clamp=${JSON.stringify(neg.clamped && [neg.clamped.colGap, neg.clamped.rowGap])}；PNG/PDF/trim/SVG 导出均通过（trim 余量 ${JSON.stringify(neg.exports.trim && neg.exports.trim.margins)}）；v1.3.3 overlay 最后子层=${ov.lastChildClass || '-'}、单选/多选=${ov.singleSelection ? 1 : 0}/${ov.multiSelectionCount || 0}、hover 在顶层、导出 SVG 无交互元素`);
     }
+    if (scenario.code === 'AJ' && evidence.realBridge) {
+      const rb = evidence.realBridge;
+      lines.push(`- AJ 真实桥回包：window.chrome.webview mock，未 stub FP.desktop.saveFile/checkUpdate/downloadUpdate；save-file→file-saved ${rb.elapsedMs}ms resolve、requestId 匹配（错误 id 忽略）、path=${rb.resolvedPath}；取消=${rb.canceled}；工程保存 UI 状态=「${rb.projectSave.status}」；__UPDATES__.check() 全链路 update-info→${rb.updateCheck.latestVersion}/${rb.updateCheck.currentVersion} note「${rb.updateCheck.notes}」(${rb.updateCheck.elapsedMs}ms，requestId=${rb.updateCheck.requestId})；__UPDATES__.download() 全链路 update-downloaded→「${rb.updateDownload.message}」path=${rb.updateDownload.path}（requestId=${rb.updateDownload.requestId}）；完整链路=${rb.fullChain}`);
+    }
+    if (scenario.code === 'AG' && evidence.pageAutoNumber) {
+      const pg = evidence.pageAutoNumber;
+      lines.push(`- AG 页面自动编号：初始 ${JSON.stringify(pg.initial)} → 新建 ${JSON.stringify(pg.afterAdd)} → 删图1后 ${JSON.stringify(pg.afterDelete)} → 再新建 ${JSON.stringify(pg.afterAddAgain)} → 复制 ${JSON.stringify(pg.afterDuplicate)}（“图 1 副本”不重编号，当前=${pg.currentName}，tab/API 同步）`);
+    }
+    if (scenario.code === 'AH' && evidence.nativeSave) {
+      const ns = evidence.nativeSave;
+      lines.push(`- AH 原生保存路径：stub FP.desktop.saveFile 捕获 ${JSON.stringify(ns.calls)}；工程状态「${ns.projectPathStatus}」；取消后「${ns.canceledStatus}」；浏览器模式回退下载 PNG/.figureplay-project`);
+    }
+    if (scenario.code === 'AI' && evidence.diagnostics) {
+      const dg = evidence.diagnostics;
+      lines.push(`- AI 诊断日志：就绪/toast/error 均记录（levels=${JSON.stringify(dg.levels)}）；帮助弹窗刷新/导出（浏览器下载 ${dg.exportBrowser}、桌面 saveFile .log）/清空；localStorage 上限 ${dg.limit} 条；不记录图片二进制`);
+    }
     if (scenario.code === 'AA' && evidence.projectFile) {
       const pf = evidence.projectFile;
       lines.push(`- AA 工程文件：快照 ${JSON.stringify(pf.snapshot)}；真实下载 ${pf.file.filename}（${pf.file.size}B）；改布局/清空后打开恢复 ${JSON.stringify(pf.restored)}；错误文件（${pf.errors.join('/')}）中文报错不改变工程`);
@@ -563,19 +587,20 @@ async function writeFinalReport(summary, runDir, naming = {}) {
 
   lines.push('', '## 复现命令', '', '```powershell');
   lines.push(`# 完整 E2E（含报告与截图）`);
-  const finalCmd = finalV150 ? '--suite=all --final-v150'
-    : (finalV142 ? '--suite=all --final-v142'
-      : (finalV141 ? '--suite=all --final-v141'
-        : (finalV140 ? '--suite=all --final-v140'
-          : (finalV134 ? '--suite=all --final-v134'
-            : (finalV133 ? '--suite=all --final-v133'
-              : (finalV132 ? '--suite=all --final-v132'
-                : (finalV131 ? '--suite=all --final-v131'
-                  : (finalV13 ? '--suite=all --final-v13'
-                    : (finalV12 ? '--suite=all --final-v12' : (finalV11 ? '--final-v11' : '--final'))))))))));
+  const finalCmd = finalV151 ? '--suite=all --final-v151'
+    : (finalV150 ? '--suite=all --final-v150'
+      : (finalV142 ? '--suite=all --final-v142'
+        : (finalV141 ? '--suite=all --final-v141'
+          : (finalV140 ? '--suite=all --final-v140'
+            : (finalV134 ? '--suite=all --final-v134'
+              : (finalV133 ? '--suite=all --final-v133'
+                : (finalV132 ? '--suite=all --final-v132'
+                  : (finalV131 ? '--suite=all --final-v131'
+                    : (finalV13 ? '--suite=all --final-v13'
+                      : (finalV12 ? '--suite=all --final-v12' : (finalV11 ? '--final-v11' : '--final')))))))))));
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} ${finalCmd}`);
-  lines.push(`# v1.5.0 全量（v1.0 回归 + v1.1 + v1.2 + v1.3 + 工程文件/配置备份/期刊库/预检/更新/全页矢量）`);
-  lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v150`);
+  lines.push(`# v1.5.1 全量（v1.0 回归 + v1.1 + v1.2 + v1.3 + v1.4 + v1.5 + 页面编号/日志/原生保存路径）`);
+  lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v151`);
   lines.push(`# 只跑某场景 / suite`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --only=U`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=v13`);
@@ -649,7 +674,7 @@ async function main() {
   log(`FigurePlay E2E run ${runId}  [suite=${suite}: ${SUITES[suite].name}]`);
   log(`应用: ${APP_INDEX}  (源码版本 ${readAppVersionFromSource()})`);
   log(`场景: ${selected.map((scenario) => scenario.code).join(', ')}  (headless=${!headed})`);
-  const finalTargetText = finalV150 || finalV142 || finalV141 || finalV140 || finalV134 || finalV133 || finalV132 || finalV131 || finalV13 || finalV12
+  const finalTargetText = finalV151 || finalV150 || finalV142 || finalV141 || finalV140 || finalV134 || finalV133 || finalV132 || finalV131 || finalV13 || finalV12
     ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / run 内关键导出`
     : (finalMode ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / artifacts/${finalNaming.exportsName}/` : '');
   log(`产物: ${runDir}${finalTargetText}\n`);

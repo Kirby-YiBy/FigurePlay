@@ -14,6 +14,12 @@ namespace FigurePlay.Desktop
         /// <summary>自测截图文件路径。</summary>
         public string ScreenshotPath { get; private set; }
 
+        /// <summary>测试/隔离用：覆盖正常模式用户数据目录（prefs/configs/update.json）。</summary>
+        public string DataDir { get; private set; }
+
+        /// <summary>测试/隔离用：覆盖 WebView2 用户数据目录。</summary>
+        public string WebViewDataDir { get; private set; }
+
         public static AppOptions Parse(string[] args)
         {
             AppOptions options = new AppOptions();
@@ -37,6 +43,18 @@ namespace FigurePlay.Desktop
                             if (i + 1 < args.Length)
                             {
                                 options.ScreenshotPath = args[++i];
+                            }
+                            break;
+                        case "--data-dir":
+                            if (i + 1 < args.Length)
+                            {
+                                options.DataDir = args[++i];
+                            }
+                            break;
+                        case "--webview-data-dir":
+                            if (i + 1 < args.Length)
+                            {
+                                options.WebViewDataDir = args[++i];
                             }
                             break;
                         case "--help":

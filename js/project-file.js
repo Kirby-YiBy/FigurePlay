@@ -50,7 +50,26 @@
       }
       const filename = defaultFilename();
       let saved = false;
-      if (typeof window.showSaveFilePicker === 'function') {
+      let savedPath = '';
+      if (FP.desktop && FP.desktop.available && typeof FP.desktop.saveFile === 'function') {
+        try {
+          const b64 = await FP.blobToBase64(new Blob([text], { type: 'application/json' }));
+          const res = await FP.desktop.saveFile({
+            suggestedName: filename,
+            filterName: 'FigurePlay 工程文件',
+            filterExtensions: ['.figureplay-project'],
+            base64: b64
+          });
+          if (res && res.ok) {
+            if (res.canceled) return false;
+            saved = true;
+            savedPath = res.path || '';
+          }
+        } catch (e) {
+          // 原生保存不可用时继续走浏览器 picker/下载
+        }
+      }
+      if (!saved && typeof window.showSaveFilePicker === 'function') {
         try {
           const handle = await window.showSaveFilePicker({
             suggestedName: filename,
@@ -68,7 +87,7 @@
       if (!saved) {
         FP.downloadBlob(new Blob([text], { type: 'application/json' }), filename);
       }
-      setStatus('已保存工程：' + FP.formatBytes(bytes), false);
+      setStatus('已保存工程：' + FP.formatBytes(bytes) + (savedPath ? ' → ' + savedPath : ''), false);
       FP.toast('已保存完整工程（' + snapshot.project.pages.length + ' 页）', 'success', 3200);
       updateMeta();
       return true;

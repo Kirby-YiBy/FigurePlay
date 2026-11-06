@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -7,23 +6,29 @@ using Newtonsoft.Json.Linq;
 
 namespace FigurePlay.Desktop
 {
-    /// <summary>
-    /// v1.5.0 关闭行为偏好（WinForms）：持久化到 %APPDATA%\FigurePlay\prefs.json；
-    /// selftest 模式使用 &lt;outDir&gt;\prefs.json 隔离，不写真实 APPDATA。
-    /// </summary>
+    /// <summary>v1.5.0/1.5.1 关闭行为偏好：%APPDATA%\FigurePlay\prefs.json；selftest 隔离。</summary>
     internal sealed class DesktopPrefsStore
     {
         public const string ActionMinimize = "minimize";
         public const string ActionExit = "exit";
 
-        public DesktopPrefsStore(bool selfTest, string outDir)
+        public DesktopPrefsStore(bool selfTest, string outDir, string dataDirOverride = null)
         {
-            PrefsPath = selfTest
-                ? Path.Combine(string.IsNullOrEmpty(outDir) ? AppPaths.ExeDir : outDir, "prefs.json")
-                : Path.Combine(
+            if (selfTest)
+            {
+                PrefsPath = Path.Combine(string.IsNullOrEmpty(outDir) ? AppPaths.ExeDir : outDir, "prefs.json");
+            }
+            else if (!string.IsNullOrEmpty(dataDirOverride))
+            {
+                PrefsPath = Path.Combine(dataDirOverride, "prefs.json");
+            }
+            else
+            {
+                PrefsPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "FigurePlay",
                     "prefs.json");
+            }
         }
 
         public string PrefsPath { get; private set; }
@@ -48,7 +53,7 @@ namespace FigurePlay.Desktop
             }
             catch
             {
-                // 损坏时按未设置处理
+                // ignore
             }
 
             return false;
@@ -110,7 +115,7 @@ namespace FigurePlay.Desktop
         }
     }
 
-    /// <summary>v1.5.0 自定义 X 关闭提示对话框（最小化 / 退出程序 / 取消 + 记住选择）。</summary>
+    /// <summary>v1.5.1 自定义 X 关闭提示对话框（按钮自适应宽度，避免中文末字被裁）。</summary>
     internal sealed class CloseConfirmDialog : Form
     {
         private readonly CheckBox _remember;
@@ -124,52 +129,89 @@ namespace FigurePlay.Desktop
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            ClientSize = new Size(420, 190);
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            MinimumSize = new Size(500, 210);
             Font = new Font("Microsoft YaHei UI", 9F);
+            Padding = new Padding(20, 16, 20, 16);
 
             Label title = new Label
             {
                 Text = "要关闭 FigurePlay 吗？",
-                AutoSize = false,
-                Location = new Point(22, 20),
-                Size = new Size(376, 26),
+                AutoSize = true,
                 Font = new Font(Font.FontFamily, 11F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 0, 8),
             };
             Label description = new Label
             {
-                Text = "最小化会保留任务栏窗口并继续运行；退出程序会关闭窗口并清理后台 PowerPoint 会话。",
+                Text = "「最小化到托盘」会隐藏窗口并继续运行（任务栏右下角托盘可恢复）；「退出程序」会关闭窗口并清理后台 PowerPoint 会话。",
                 AutoSize = false,
-                Location = new Point(22, 52),
-                Size = new Size(376, 44),
+                MaximumSize = new Size(440, 0),
+                Size = new Size(440, 40),
+                Margin = new Padding(0, 0, 0, 8),
             };
             _remember = new CheckBox
             {
                 Text = "记住本次选择，不再提示",
                 AutoSize = true,
-                Location = new Point(22, 110),
+                Margin = new Padding(0, 0, 0, 10),
             };
 
             Button btnMinimize = new Button
             {
-                Text = "最小化(&M)",
-                Size = new Size(112, 32),
-                Location = new Point(22, 145),
+                Text = "最小化到托盘(&M)",
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(12, 4, 12, 4),
+                MinimumSize = new Size(140, 32),
+                Margin = new Padding(0, 0, 10, 0),
                 DialogResult = DialogResult.None,
             };
             Button btnExit = new Button
             {
                 Text = "退出程序(&X)",
-                Size = new Size(112, 32),
-                Location = new Point(144, 145),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(12, 4, 12, 4),
+                MinimumSize = new Size(120, 32),
+                Margin = new Padding(0, 0, 10, 0),
                 DialogResult = DialogResult.None,
             };
             Button btnCancel = new Button
             {
                 Text = "取消(&C)",
-                Size = new Size(112, 32),
-                Location = new Point(266, 145),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(12, 4, 12, 4),
+                MinimumSize = new Size(100, 32),
+                Margin = new Padding(0),
                 DialogResult = DialogResult.Cancel,
             };
+
+            FlowLayoutPanel buttons = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Margin = new Padding(0, 6, 0, 0),
+            };
+            buttons.Controls.Add(btnMinimize);
+            buttons.Controls.Add(btnExit);
+            buttons.Controls.Add(btnCancel);
+
+            FlowLayoutPanel root = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Dock = DockStyle.Fill,
+            };
+            root.Controls.Add(title);
+            root.Controls.Add(description);
+            root.Controls.Add(_remember);
+            root.Controls.Add(buttons);
 
             btnMinimize.Click += (sender, e) =>
             {
@@ -188,12 +230,7 @@ namespace FigurePlay.Desktop
 
             AcceptButton = btnMinimize;
             CancelButton = btnCancel;
-            Controls.Add(title);
-            Controls.Add(description);
-            Controls.Add(_remember);
-            Controls.Add(btnMinimize);
-            Controls.Add(btnExit);
-            Controls.Add(btnCancel);
+            Controls.Add(root);
         }
 
         /// <summary>minimize / exit / cancel。</summary>

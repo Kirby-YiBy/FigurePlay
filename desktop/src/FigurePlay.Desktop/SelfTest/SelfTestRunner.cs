@@ -222,6 +222,18 @@ namespace FigurePlay.Desktop.SelfTest
                 JObject vectorPdfMulti = await RunVectorPdfMultiChecksAsync();
                 _report["vectorPdfMulti"] = vectorPdfMulti;
 
+                // 6.8) v1.5.1 真实 WebView2 更新 UI E2E：check-update→update-info / download-update→update-downloaded
+                JObject updateBridgeE2E = await RunUpdateBridgeE2ETestAsync();
+                _report["updateBridgeE2E"] = updateBridgeE2E;
+
+                // 6.7) v1.5.1 真实 WebView2 桥 E2E：工程/配置/PNG 三次 saveFile Promise 立即 resolve（不落 180s 超时）
+                JObject saveFileBridgeE2E = await RunSaveFileBridgeE2ETestAsync();
+                _report["saveFileBridgeE2E"] = saveFileBridgeE2E;
+
+                // 6.6) v1.5.1 save-file 原生保存路径桥（selftest 隔离写文件，不弹窗）
+                JObject saveFile = await RunSaveFileTestAsync();
+                _report["saveFile"] = saveFile;
+
                 // 6.5) v1.5.0 更新检查/下载安全约束（不联网、不覆盖测试 exe）
                 JObject updateChecks = await RunUpdateChecksAsync();
                 _report["updateChecks"] = updateChecks;
@@ -310,6 +322,33 @@ namespace FigurePlay.Desktop.SelfTest
                 if (!screenshot.Value<bool>("ok"))
                 {
                     failures.Add("窗口截图失败：" + (screenshot.Value<string>("error") ?? "未知原因"));
+                }
+
+                bool updateBridgeE2EOk = _report["updateBridgeE2E"] is JObject &&
+                                         ((JObject)_report["updateBridgeE2E"]).Value<bool>("ok");
+                if (!updateBridgeE2EOk)
+                {
+                    JObject upE2E = _report["updateBridgeE2E"] as JObject;
+                    failures.Add("更新 UI 真实桥 E2E 失败：" +
+                                 (upE2E == null ? "未生成报告" : (upE2E.Value<string>("error") ?? "未知原因")));
+                }
+
+                bool saveFileBridgeE2EOk = _report["saveFileBridgeE2E"] is JObject &&
+                                           ((JObject)_report["saveFileBridgeE2E"]).Value<bool>("ok");
+                if (!saveFileBridgeE2EOk)
+                {
+                    JObject sfE2E = _report["saveFileBridgeE2E"] as JObject;
+                    failures.Add("saveFile 真实桥 E2E 失败：" +
+                                 (sfE2E == null ? "未生成报告" : (sfE2E.Value<string>("error") ?? "未知原因")));
+                }
+
+                bool saveFileOk = _report["saveFile"] is JObject &&
+                                  ((JObject)_report["saveFile"]).Value<bool>("ok");
+                if (!saveFileOk)
+                {
+                    JObject sf = _report["saveFile"] as JObject;
+                    failures.Add("save-file 桥测试失败：" +
+                                 (sf == null ? "未生成报告" : (sf.Value<string>("error") ?? "未知原因")));
                 }
 
                 bool updateChecksOk = _report["updateChecks"] is JObject &&

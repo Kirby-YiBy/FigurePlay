@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.5.0-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.5.0-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.5.1-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.5.1-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -226,6 +226,29 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
     if ($report.vectorPdf -and $report.vectorPdf.labelCenter) {
         $lbl = $report.vectorPdf.labelCenter
         Write-Info ("编号中心      : ok={0} (a)={1}mm/err={2}mm (b)={3}mm/err={4}mm 容差={5}mm" -f $lbl.ok, $lbl.checks.centerAMm, $lbl.checks.centerAErrorMm, $lbl.checks.centerBMm, $lbl.checks.centerBErrorMm, $lbl.checks.toleranceMm)
+    }
+    if ($report.updateBridgeE2E) {
+        $ue = $report.updateBridgeE2E
+        if ($ue.ok) {
+            Write-Info ("更新UI真实桥  : ok=True check=update-info({0}ms, latest={1}) download=update-downloaded({2}ms)" -f $ue.checks.checkMs, $ue.checks.checkLatest, $ue.checks.downloadMs)
+        }
+        else {
+            Write-Info ("更新UI真实桥  : ok=False " + $ue.error)
+        }
+    }
+    if ($report.saveFileBridgeE2E) {
+        $e2e = $report.saveFileBridgeE2E
+        if ($e2e.ok) {
+            $items = $e2e.items | ForEach-Object { "$($_.key):$($_.elapsedMs)ms" }
+            Write-Info ("真实桥保存    : ok=True 工程/配置/PNG 各一次 Promise立即返回（" + ($items -join ', ') + "）")
+        }
+        else {
+            Write-Info ("真实桥保存    : ok=False " + $e2e.error)
+        }
+    }
+    if ($report.saveFile) {
+        $sf = $report.saveFile
+        Write-Info ("原生保存      : ok={0} path={1} bytes={2} 路径安全={3} 非法base64拒绝={4}" -f $sf.ok, $sf.path, $sf.bytes, $sf.traversalSafe, $sf.invalidBase64Rejected)
     }
     if ($report.updateChecks) {
         $uc = $report.updateChecks

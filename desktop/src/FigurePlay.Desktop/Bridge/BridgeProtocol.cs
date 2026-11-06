@@ -10,11 +10,11 @@ namespace FigurePlay.Desktop.Bridge
     ///   JS→Host : {"type":"read-clipboard-image","requestId":"&lt;id&gt;"}
     ///   Host→JS : {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":true,"dataUrl":"data:image/png;base64,...","width":W,"height":H,"sourceFormat":"EMF|Metafile|Bitmap|DIB"}
     ///             失败时 {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":false,"error":"中文原因"}
-    ///   启动后 Host 可发 {"type":"host-ready","version":"1.5.0"}
+    ///   启动后 Host 可发 {"type":"host-ready","version":"1.5.1"}
     /// </summary>
     internal static class BridgeProtocol
     {
-        public const string HostVersion = "1.5.0";
+        public const string HostVersion = "1.5.1";
 
         public const string TypeReadClipboardImage = "read-clipboard-image";
         public const string TypeClipboardImage = "clipboard-image";
@@ -37,6 +37,8 @@ namespace FigurePlay.Desktop.Bridge
         public const string TypeUpdateCheck = "update-info";
         public const string TypeDownloadUpdate = "download-update";
         public const string TypeUpdateDownload = "update-downloaded";
+        public const string TypeSaveFile = "save-file";
+        public const string TypeFileSaved = "file-saved";
 
         /// <summary>
         /// 解析 WebView2 的 WebMessageAsJson。JS 端既可能发送字符串化的 JSON
@@ -366,6 +368,28 @@ namespace FigurePlay.Desktop.Bridge
                 ["requestId"] = requestId ?? string.Empty,
                 ["ok"] = false,
                 ["error"] = string.IsNullOrEmpty(error) ? "读取配置备份失败。" : error,
+            };
+            return payload.ToString(Formatting.None);
+        }
+
+
+        public static string BuildFileSaved(
+            string requestId,
+            bool ok,
+            string path,
+            int bytes,
+            bool canceled,
+            string error)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeFileSaved,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = ok,
+                ["path"] = path ?? string.Empty,
+                ["bytes"] = bytes,
+                ["canceled"] = canceled,
+                ["error"] = error ?? string.Empty,
             };
             return payload.ToString(Formatting.None);
         }

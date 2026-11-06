@@ -33,6 +33,7 @@ const projectFileScenario = {
     const { page } = ctx;
     await app.openAppReady(page);
     if (!(await app.ensureV150(ctx, page))) return;
+    const appVersion = await page.evaluate(() => window.__FIGPLAY__.version);
     await app.api.clearAll(page);
 
     await app.api.setLayout(page, 2, 2);
@@ -57,7 +58,7 @@ const projectFileScenario = {
     const page2 = snapshot.project.pages[1];
     ctx.check('getProjectSnapshot：type/schemaVersion/project.pages（2 页）',
       snapshot.type === 'figureplay-project' && snapshot.schemaVersion === 1
-      && snapshot.appVersion === '1.5.0'
+      && snapshot.appVersion === appVersion
       && !!Date.parse(snapshot.savedAt || '')
       && snapshot.project.pages.length === 2,
       { type: snapshot.type, schema: snapshot.schemaVersion, pages: snapshot.project.pages.length });
@@ -281,6 +282,7 @@ const configBackupScenario = {
       await plainContext.close();
     }
     await app.closeConfigDialog(page);
+    await ctx.screenshot('config-backup');
     ctx.evidence.configBackup = {
       hostPath, confirm: confirmMsg, backups: ['profiles-2026-11-06-1200.json', 'profiles-2026-11-06-1100.json'],
       restored: cfg.storage.names,
@@ -557,6 +559,10 @@ const multiPageVectorScenario = {
       };
     });
     await app.installFakeSavePicker(page, { mode: 'remove' });
+    // v1.5.1 桌面桥新增 saveFile 会优先走宿主保存；本场景用下载验证多页 PDF
+    await page.evaluate(() => {
+      if (window.FP && window.FP.desktop) delete window.FP.desktop.saveFile;
+    });
     const download = await waitForDownload(page, () => page.locator('#btn-export-top').click(), { timeout: 30000 });
     const pdfFile = await saveDownload(download, 'fp-v15-allpages-vector.pdf', { dir: ctx.exportsDir });
     await app.restoreSavePicker(page);
@@ -590,6 +596,9 @@ const multiPageVectorScenario = {
       && /全页矢量 PDF 要求每页都有 EMF|多页位图/.test(fallbackUi.ui.exportNote || ''),
       { disabled: fallbackUi.ui.vectorPdfDisabled, note: fallbackUi.ui.exportNote });
     await app.installFakeSavePicker(page, { mode: 'remove' });
+    await page.evaluate(() => {
+      if (window.FP && window.FP.desktop) delete window.FP.desktop.saveFile;
+    });
     const fallbackDownload = await waitForDownload(page, () => page.locator('#btn-export-top').click(), { timeout: 30000 });
     const fallbackFile = await saveDownload(fallbackDownload, 'fp-v15-allpages-fallback.pdf', { dir: ctx.exportsDir });
     await app.restoreSavePicker(page);

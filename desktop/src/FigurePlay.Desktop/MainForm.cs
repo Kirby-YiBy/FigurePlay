@@ -44,6 +44,8 @@ namespace FigurePlay.Desktop
         private readonly ConfigProfileStore _configProfileStore;
         private readonly DesktopPrefsStore _prefsStore;
         private readonly UpdateService _updateService;
+        private NotifyIcon _trayIcon;
+        private bool _trayBalloonShown;
         private bool _forceClose;
         private readonly List<ConsoleErrorRecord> _consoleErrors = new List<ConsoleErrorRecord>();
         private readonly List<string> _hostErrors = new List<string>();
@@ -61,10 +63,16 @@ namespace FigurePlay.Desktop
         {
             _options = options ?? throw new ArgumentNullException("options");
             _wwwroot = AppPaths.WwwRoot;
-            _userDataFolder = options.SelfTest ? AppPaths.SelfTestUserDataFolder : AppPaths.UserDataFolder;
-            _configProfileStore = new ConfigProfileStore(options.SelfTest, options.OutDir);
-            _prefsStore = new DesktopPrefsStore(options.SelfTest, options.OutDir);
-            _updateService = new UpdateService(options.SelfTest, options.OutDir);
+            _userDataFolder = !string.IsNullOrEmpty(options.WebViewDataDir)
+                ? options.WebViewDataDir
+                : (options.SelfTest ? AppPaths.SelfTestUserDataFolder : AppPaths.UserDataFolder);
+            _configProfileStore = new ConfigProfileStore(options.SelfTest, options.OutDir, options.DataDir);
+            _prefsStore = new DesktopPrefsStore(options.SelfTest, options.OutDir, options.DataDir);
+            _updateService = new UpdateService(options.SelfTest, options.OutDir, options.DataDir);
+            if (!options.SelfTest)
+            {
+                InitializeTrayIcon();
+            }
 
             SuspendLayout();
             Text = Program.WindowTitle;
@@ -465,6 +473,17 @@ namespace FigurePlay.Desktop
                     PostJsonToJs(payload.ToString(Newtonsoft.Json.Formatting.None));
                 }
             }
+            else if (string.Equals(type, BridgeProtocol.TypeSaveFile, StringComparison.Ordinal))
+            {
+                string requestId = message.Value<string>("requestId") ?? string.Empty;
+                JObject saved = SaveFileService.Save(this, _options.SelfTest, _options.OutDir, message);
+                saved["type"] = BridgeProtocol.TypeFileSaved;
+                saved["requestId"] = requestId;
+                if (!_closing)
+                {
+                    PostJsonToJs(saved.ToString(Newtonsoft.Json.Formatting.None));
+                }
+            }
             else if (string.Equals(type, "app-ready", StringComparison.Ordinal))
             {
                 // 网页端桥（js/desktop.js）加载完成，立即回 host-ready，避免与轮询产生竞态。
@@ -577,6 +596,83 @@ namespace FigurePlay.Desktop
             }
         }
 
+        private void InitializeTrayIcon()
+        {
+            try
+            {
+                ContextMenuStrip menu = new ContextMenuStrip();
+                ToolStripMenuItem showItem = new ToolStripMenuItem("显示主窗口");
+                showItem.Click += (sender, e) => RestoreFromTray();
+                ToolStripMenuItem exitItem = new ToolStripMenuItem("退出程序");
+                exitItem.Click += (sender, e) => ExitFromTray();
+                menu.Items.Add(showItem);
+                menu.Items.Add(new ToolStripSeparator());
+                menu.Items.Add(exitItem);
+
+                _trayIcon = new NotifyIcon
+                {
+                    Icon = AppPaths.LoadAppIcon() ?? SystemIcons.Application,
+                    Text = "FigurePlay · 论文子图排版",
+                    ContextMenuStrip = menu,
+                    Visible = true,
+                };
+                _trayIcon.DoubleClick += (sender, e) => RestoreFromTray();
+            }
+            catch
+            {
+                _trayIcon = null;
+            }
+        }
+
+        private void HideToTray()
+        {
+            if (_trayIcon == null)
+            {
+                WindowState = FormWindowState.Minimized;
+                return;
+            }
+
+            Hide();
+            ShowInTaskbar = false;
+            _trayIcon.Visible = true;
+            if (!_trayBalloonShown)
+            {
+                _trayBalloonShown = true;
+                try
+                {
+                    _trayIcon.ShowBalloonTip(2500, "FigurePlay", "已最小化到托盘，双击托盘图标可恢复窗口。", ToolTipIcon.Info);
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+        }
+
+        private void RestoreFromTray()
+        {
+            ShowInTaskbar = true;
+            Show();
+            if (WindowState == FormWindowState.Minimized)
+            {
+                WindowState = FormWindowState.Normal;
+            }
+
+            Activate();
+            BringToFront();
+        }
+
+        private void ExitFromTray()
+        {
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = false;
+            }
+
+            _forceClose = true;
+            Close();
+        }
+
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
             // 自测/程序内部关闭：不弹 UI，直接关闭（selftest 不能卡在对话框）
@@ -592,7 +688,7 @@ namespace FigurePlay.Desktop
                 if (rememberedAction == DesktopPrefsStore.ActionMinimize)
                 {
                     e.Cancel = true;
-                    WindowState = FormWindowState.Minimized;
+                    HideToTray();
                     return;
                 }
 
@@ -620,7 +716,7 @@ namespace FigurePlay.Desktop
                 if (dialog.Result == DesktopPrefsStore.ActionMinimize)
                 {
                     e.Cancel = true;
-                    WindowState = FormWindowState.Minimized;
+                    HideToTray();
                     return;
                 }
 
@@ -645,6 +741,13 @@ namespace FigurePlay.Desktop
             catch
             {
                 // ignore
+            }
+
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+                _trayIcon = null;
             }
 
             _clipboardService.Dispose();

@@ -22,15 +22,24 @@ namespace FigurePlay.Desktop.Bridge
     {
         private static readonly HttpClient Http = CreateHttpClient();
 
-        public UpdateService(bool selfTest, string outDir)
+        public UpdateService(bool selfTest, string outDir, string dataDirOverride = null)
         {
             IsSelfTest = selfTest;
-            ConfigPath = selfTest
-                ? Path.Combine(string.IsNullOrEmpty(outDir) ? AppPaths.ExeDir : outDir, "update.json")
-                : Path.Combine(
+            if (selfTest)
+            {
+                ConfigPath = Path.Combine(string.IsNullOrEmpty(outDir) ? AppPaths.ExeDir : outDir, "update.json");
+            }
+            else if (!string.IsNullOrEmpty(dataDirOverride))
+            {
+                ConfigPath = Path.Combine(dataDirOverride, "update.json");
+            }
+            else
+            {
+                ConfigPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "FigurePlay",
                     "update.json");
+            }
             DownloadDir = Path.Combine(Path.GetTempPath(), "FigurePlay-update");
         }
 
@@ -72,7 +81,7 @@ namespace FigurePlay.Desktop.Bridge
 
             result["enabled"] = true;
             string manifestUrl = config.Value<string>("manifestUrl") ?? string.Empty;
-            if (!IsHttpsUrl(manifestUrl))
+            if (!IsAllowedUrl(manifestUrl))
             {
                 result["ok"] = false;
                 result["error"] = "更新源 manifestUrl 必须是 HTTPS 地址（默认不联网）。";
@@ -81,7 +90,7 @@ namespace FigurePlay.Desktop.Bridge
 
             try
             {
-                string manifestText = await Http.GetStringAsync(manifestUrl).ConfigureAwait(false);
+                string manifestText = await ReadUrlTextAsync(manifestUrl).ConfigureAwait(false);
                 JObject manifest = JObject.Parse(manifestText);
                 string latest = manifest.Value<string>("version") ?? string.Empty;
                 if (!IsValidVersion(latest))
@@ -128,7 +137,7 @@ namespace FigurePlay.Desktop.Bridge
             }
 
             string manifestUrl = config.Value<string>("manifestUrl") ?? string.Empty;
-            if (!IsHttpsUrl(manifestUrl))
+            if (!IsAllowedUrl(manifestUrl))
             {
                 result["error"] = "更新源 manifestUrl 必须是 HTTPS 地址。";
                 return result;
@@ -136,7 +145,7 @@ namespace FigurePlay.Desktop.Bridge
 
             try
             {
-                string manifestText = await Http.GetStringAsync(manifestUrl).ConfigureAwait(false);
+                string manifestText = await ReadUrlTextAsync(manifestUrl).ConfigureAwait(false);
                 JObject manifest = JObject.Parse(manifestText);
                 string version = manifest.Value<string>("version") ?? string.Empty;
                 string url = manifest.Value<string>("url") ?? string.Empty;
@@ -147,7 +156,7 @@ namespace FigurePlay.Desktop.Bridge
                     return result;
                 }
 
-                if (!IsHttpsUrl(url))
+                if (!IsAllowedUrl(url))
                 {
                     result["error"] = "更新下载地址必须是 HTTPS。";
                     return result;
@@ -159,7 +168,7 @@ namespace FigurePlay.Desktop.Bridge
                     return result;
                 }
 
-                byte[] bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false);
+                byte[] bytes = await ReadUrlBytesAsync(url).ConfigureAwait(false);
                 if (bytes.Length < 1024)
                 {
                     result["error"] = "下载的更新文件过小，已拒绝。";
@@ -307,6 +316,48 @@ namespace FigurePlay.Desktop.Bridge
             Uri uri;
             return Uri.TryCreate(url, UriKind.Absolute, out uri) &&
                    string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsAllowedUrl(string url)
+        {
+            if (IsHttpsUrl(url))
+            {
+                return true;
+            }
+
+            // 仅 selftest 允许本地 file://（不联网、不写真实 APPDATA），生产必须 HTTPS
+            if (IsSelfTest)
+            {
+                Uri uri;
+                return Uri.TryCreate(url, UriKind.Absolute, out uri) &&
+                       string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+
+        private async Task<string> ReadUrlTextAsync(string url)
+        {
+            Uri uri;
+            if (IsSelfTest && Uri.TryCreate(url, UriKind.Absolute, out uri) &&
+                string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
+            {
+                return File.ReadAllText(uri.LocalPath);
+            }
+
+            return await Http.GetStringAsync(url).ConfigureAwait(false);
+        }
+
+        private async Task<byte[]> ReadUrlBytesAsync(string url)
+        {
+            Uri uri;
+            if (IsSelfTest && Uri.TryCreate(url, UriKind.Absolute, out uri) &&
+                string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
+            {
+                return File.ReadAllBytes(uri.LocalPath);
+            }
+
+            return await Http.GetByteArrayAsync(url).ConfigureAwait(false);
         }
 
         private static bool IsHex(string value)

@@ -766,6 +766,16 @@
     scheduleSave();
   }
 
+  function renumberDefaultPageNames() {
+    let n = 0;
+    project.pages.forEach(function (page) {
+      if (/^图\s*\d+$/.test(String(page.name || '').trim())) {
+        n += 1;
+        page.name = '图 ' + n;
+      }
+    });
+  }
+
   function addPage(mode) {
     if (project.pages.length >= 20) {
       FP.toast('最多支持 20 个图页', 'error');
@@ -793,6 +803,7 @@
         }, project.pages.length);
     project.pages.splice(project.current + 1, 0, newPage);
     project.current = project.current + 1;
+    renumberDefaultPageNames();
     loadPageIntoState(project.current);
     geom = FP.computeGeometry(state.layout);
     renderAll();
@@ -811,6 +822,7 @@
     commitHistoryNow();
     project.pages.splice(project.current, 1);
     project.current = FP.clamp(project.current, 0, project.pages.length - 1);
+    renumberDefaultPageNames();
     loadPageIntoState(project.current);
     geom = FP.computeGeometry(state.layout);
     renderAll();
@@ -2364,7 +2376,13 @@
   }
 
   async function pickExportFile(format, allPages) {
-    if (state.export.saveAs === false || typeof window.showSaveFilePicker !== 'function') {
+    if (state.export.saveAs === false) {
+      return { mode: 'download' };
+    }
+    if (FP.desktop && FP.desktop.available && typeof FP.desktop.saveFile === 'function') {
+      return { mode: 'host' };
+    }
+    if (typeof window.showSaveFilePicker !== 'function') {
       return { mode: 'download' };
     }
     const spec = exportFileSpec(format, allPages);
@@ -2837,7 +2855,23 @@
       }
       const elapsed = Math.round(performance.now() - start);
       const extra = result.vector ? ' · 矢量 PDF' : (allPages ? '（' + result.pageCount + ' 页）' : '');
-      if (target.mode === 'handle') {
+      if (target.mode === 'host') {
+        const spec = exportFileSpec(result.format, allPages);
+        const base64 = await FP.blobToBase64(result.blob);
+        const saved = await FP.desktop.saveFile({
+          suggestedName: result.filename,
+          filterName: spec.label,
+          filterExtensions: ['.' + spec.ext],
+          base64: base64
+        });
+        if (saved && saved.canceled) {
+          setStatus('已取消导出');
+          return;
+        }
+        if (!saved || !saved.ok) throw new Error((saved && saved.error) || '保存文件失败');
+        setStatus('已保存到 ' + (saved.path || result.filename) + '（' + FP.formatBytes(result.bytes) + '，' + elapsed + ' ms）');
+        FP.toast('已保存到所选位置：' + (saved.path || result.filename) + extra, 'success', 3600);
+      } else if (target.mode === 'handle') {
         try {
           await writeBlobToHandle(target.handle, result.blob);
         } catch (writeErr) {
@@ -3872,6 +3906,7 @@
         commitHistoryNow();
         project.pages.splice(i, 1);
         project.current = FP.clamp(Math.min(i, project.pages.length - 1), 0, project.pages.length - 1);
+        renumberDefaultPageNames();
         loadPageIntoState(project.current);
         geom = FP.computeGeometry(state.layout);
         renderAll();

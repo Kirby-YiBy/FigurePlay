@@ -582,6 +582,15 @@
     </ul>
     <h3>支持图片</h3>
     <p>PNG、JPG、WebP、GIF（首帧）、BMP、SVG、TIFF，以及通过粘贴小画布导入的剪贴板图片；桌面版额外支持 MATLAB <b>.fig</b>。所有处理均在本地完成，不会上传任何文件。</p>
+    <h3>诊断日志</h3>
+    <div class="diag-log-box">
+      <textarea id="diag-log-text" readonly rows="5" spellcheck="false" placeholder="暂无日志"></textarea>
+      <div class="diag-log-actions">
+        <button type="button" class="btn btn-sm" id="diag-log-refresh">刷新</button>
+        <button type="button" class="btn btn-sm" id="diag-log-export">导出日志</button>
+        <button type="button" class="btn btn-sm" id="diag-log-clear">清空</button>
+      </div>
+    </div>
     <h3>更新</h3>
     <div class="update-box" id="update-box">
       <span id="update-status">桌面版可检查更新；浏览器版请直接替换 index.html/js/assets 文件。</span>
@@ -781,6 +790,7 @@
 <script src="js/journal-presets.js"></script>
 <script src="js/preflight.js"></script>
 <script src="js/updates.js"></script>
+<script src="js/logs.js"></script>
 <script src="js/config-profiles.js"></script>
 </body>
 </html>

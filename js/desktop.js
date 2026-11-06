@@ -46,7 +46,7 @@
       }
       return;
     }
-    if ((data.type === 'config-profiles' || data.type === 'config-profiles-saved' || data.type === 'config-backups' || data.type === 'config-backup') && data.requestId) {
+    if ((data.type === 'config-profiles' || data.type === 'config-profiles-saved' || data.type === 'config-backups' || data.type === 'config-backup' || data.type === 'file-saved' || data.type === 'update-info' || data.type === 'update-downloaded') && data.requestId) {
       const entry = pending.get(data.requestId);
       if (!entry) return;
       pending.delete(data.requestId);
@@ -278,6 +278,68 @@
         pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
         try {
           webview.postMessage(JSON.stringify({ type: 'read-config-backup', requestId: requestId, name: name }));
+        } catch (err) {
+          pending.delete(requestId);
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+    },
+    checkUpdate: function () {
+      if (!available) return Promise.reject(new Error('检查更新需要桌面版 FigurePlay'));
+      return new Promise(function (resolve, reject) {
+        const requestId = 'updcheck-' + (++seq) + '-' + Date.now().toString(36);
+        const timer = setTimeout(function () {
+          pending.delete(requestId);
+          reject(new Error('检查更新超时'));
+        }, 20000);
+        pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+        try {
+          webview.postMessage(JSON.stringify({ type: 'check-update', requestId: requestId }));
+        } catch (err) {
+          pending.delete(requestId);
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+    },
+    downloadUpdate: function () {
+      if (!available) return Promise.reject(new Error('下载更新需要桌面版 FigurePlay'));
+      return new Promise(function (resolve, reject) {
+        const requestId = 'updload-' + (++seq) + '-' + Date.now().toString(36);
+        const timer = setTimeout(function () {
+          pending.delete(requestId);
+          reject(new Error('下载更新超时'));
+        }, 180000);
+        pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+        try {
+          webview.postMessage(JSON.stringify({ type: 'download-update', requestId: requestId }));
+        } catch (err) {
+          pending.delete(requestId);
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+    },
+    saveFile: function (opts) {
+      if (!available) return Promise.reject(new Error('当前为浏览器模式'));
+      opts = opts || {};
+      return new Promise(function (resolve, reject) {
+        const requestId = 'savefile-' + (++seq) + '-' + Date.now().toString(36);
+        const timer = setTimeout(function () {
+          pending.delete(requestId);
+          reject(new Error('保存文件超时'));
+        }, 180000);
+        pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+        try {
+          webview.postMessage(JSON.stringify({
+            type: 'save-file',
+            requestId: requestId,
+            suggestedName: String(opts.suggestedName || 'FigurePlay'),
+            filterName: String(opts.filterName || 'FigurePlay 文件'),
+            filterExtensions: Array.isArray(opts.filterExtensions) ? opts.filterExtensions : ['.json'],
+            base64: String(opts.base64 || '')
+          }));
         } catch (err) {
           pending.delete(requestId);
           clearTimeout(timer);

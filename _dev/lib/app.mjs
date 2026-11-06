@@ -649,6 +649,12 @@ export async function exportToFile(page, format, overrides, exportDir, fallbackN
 /** 通过 UI 的「导出」按钮下载文件 */
 export async function uiDownload(page, formatButton, triggerSelector, dir = DOWNLOADS_DIR, filename) {
   await clickFormat(page, formatButton);
+  // 桌面宿主桥存在时 v1.5.1 会优先走 FP.desktop.saveFile；旧场景要验证真实下载，临时移除该方法
+  await page.evaluate(() => {
+    if (window.FP && window.FP.desktop && typeof window.FP.desktop.saveFile === 'function') {
+      delete window.FP.desktop.saveFile;
+    }
+  });
   const download = await waitForDownload(page, () => page.locator(triggerSelector).click(), { timeout: 60000 });
   return saveDownload(download, filename, { dir });
 }
@@ -3210,27 +3216,50 @@ export async function setCellFitUi(page, index, fit) {
 export async function installUpdateMock(page, info = {}) {
   await page.addInitScript((payload) => {
     window.__updateMock = { checkCalls: 0, downloadCalls: 0, payload };
+    const patchDesktop = (d) => {
+      if (!d || d.__e2eMock) return;
+      d.checkUpdate = async function () {
+        window.__updateMock.checkCalls += 1;
+        return {
+          ok: true, configured: true, hasUpdate: true,
+          latestVersion: payload.latestVersion || '1.5.1',
+          currentVersion: payload.currentVersion || '1.5.0',
+          notes: payload.notes || 'E2E 更新说明',
+        };
+      };
+      d.downloadUpdate = async function () {
+        window.__updateMock.downloadCalls += 1;
+        return { ok: true, message: '更新已下载并通过 SHA256 校验，准备安装' };
+      };
+      d.__e2eMock = true;
+      window.__updateMock.patched = true;
+    };
+    const state = { fp: null };
+    try {
+      Object.defineProperty(window, 'FP', {
+        configurable: true,
+        get() { return state.fp; },
+        set(value) {
+          state.fp = value;
+          if (!value || value.__e2eDesktopHook) return;
+          value.__e2eDesktopHook = true;
+          let desktopValue;
+          try {
+            Object.defineProperty(value, 'desktop', {
+              configurable: true,
+              enumerable: true,
+              get() { return desktopValue; },
+              set(desktop) { desktopValue = desktop; patchDesktop(desktop); },
+            });
+          } catch (err) { /* fallback */ }
+        },
+      });
+    } catch (err) { /* fallback */ }
+    // 兜底轮询（若 FP 在 init script 之前已存在）
     const timer = setInterval(() => {
-      if (!(window.FP && window.FP.desktop)) return;
-      const d = window.FP.desktop;
-      if (typeof d.checkUpdate !== 'function' || !d.__e2eMock) {
-        d.checkUpdate = async function () {
-          window.__updateMock.checkCalls += 1;
-          return {
-            ok: true, configured: true, hasUpdate: true,
-            latestVersion: payload.latestVersion || '1.5.1',
-            currentVersion: payload.currentVersion || '1.5.0',
-            notes: payload.notes || 'E2E 更新说明',
-          };
-        };
-        d.downloadUpdate = async function () {
-          window.__updateMock.downloadCalls += 1;
-          return { ok: true, message: '更新已下载并通过 SHA256 校验，准备安装' };
-        };
-        d.__e2eMock = true;
-        clearInterval(timer);
-      }
-    }, 5);
+      if (state.fp && state.fp.desktop) patchDesktop(state.fp.desktop);
+    }, 0);
+    setTimeout(() => clearInterval(timer), 10000);
   }, info);
 }
 
@@ -3264,6 +3293,196 @@ export async function getUpdateUiState(page) {
     };
   });
 }
+
+/* ==========================================================================
+ * v1.5.1 新增：页面自动编号 / 诊断日志 / 原生 saveFile 路径
+ * ========================================================================== */
+
+export async function probeV151(page) {
+  return page.evaluate(() => {
+    const api = window.__FIGPLAY__;
+    const d = window.FP && window.FP.desktop;
+    const ids = ['diag-log-text', 'diag-log-refresh', 'diag-log-export', 'diag-log-clear',
+      'project-file-status', 'config-storage-hint', 'status-text'];
+    let logs = null;
+    try { logs = window.__DIAG_LOGS__ ? window.__DIAG_LOGS__.list() : null; } catch (err) { logs = null; }
+    return {
+      version: api ? api.version || null : null,
+      apiPresent: !!api,
+      hasDiag: !!window.__DIAG_LOGS__,
+      hasLogEvent: !!(window.FP && typeof window.FP.logEvent === 'function'),
+      missingIds: ids.filter((id) => !document.getElementById(id)),
+      desktopSaveFile: !!(d && typeof d.saveFile === 'function'),
+      pages: api ? api.getPages().map((p) => p.name) : [],
+      logsCount: logs ? logs.length : null,
+    };
+  });
+}
+
+export async function ensureV151(ctx, page, label = 'v1.5.1 契约') {
+  const probe = await probeV151(page);
+  ctx.evidence.v151Probe = probe;
+  ctx.check(`${label}：应用版本 >= 1.5.1（当前 ${probe.version || 'unknown'}）`,
+    /^1\.(?:5\.[1-9]|[6-9]\.|[1-9]\d\.)|^[2-9]\./.test(String(probe.version || '')), probe.version);
+  ctx.check(`${label}：诊断日志运行时/日志 UI 齐全`,
+    probe.hasDiag && probe.hasLogEvent && probe.missingIds.length === 0,
+    { hasDiag: probe.hasDiag, hasLogEvent: probe.hasLogEvent, missingIds: probe.missingIds });
+  ctx.note('v1.5.1 页面编号/日志/saveFile 契约探测（信息，非问题）', JSON.stringify(probe));
+  return probe.hasDiag && probe.hasLogEvent && probe.missingIds.length === 0;
+}
+
+export async function getPageNameState(page) {
+  return page.evaluate(() => {
+    const api = window.__FIGPLAY__;
+    const info = api.getPreviewInfo();
+    return {
+      pages: api.getPages().map((page) => ({ index: page.index, name: page.name, filled: page.filledCount })),
+      names: api.getPages().map((page) => page.name),
+      current: info.pageIndex,
+      currentName: info.pageName,
+      pageCount: info.pageCount,
+      tabs: Array.from(document.querySelectorAll('#page-tabs .page-tab')).map((tab) => ({
+        index: Number(tab.dataset.index),
+        text: (tab.textContent || '').trim(),
+        active: tab.classList.contains('is-active'),
+        title: tab.title,
+      })),
+    };
+  });
+}
+
+/* ---------------- 诊断日志 ---------------- */
+
+export async function getDiagnosticState(page) {
+  return page.evaluate(() => {
+    const text = document.getElementById('diag-log-text');
+    let logs = [];
+    try { logs = window.__DIAG_LOGS__ ? window.__DIAG_LOGS__.list() : []; } catch (err) { logs = []; }
+    let storage = { raw: null, length: 0, parsedLength: 0 };
+    try {
+      const raw = localStorage.getItem('figureplay.diagnostics.v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      storage = { size: raw ? raw.length : 0, length: Array.isArray(parsed) ? parsed.length : 0 };
+    } catch (err) { storage = { error: String(err && err.message ? err.message : err) }; }
+    const help = document.getElementById('help-dialog');
+    return {
+      helpOpen: !!help && help.open === true,
+      logs,
+      logCount: logs.length,
+      levels: logs.reduce((map, entry) => {
+        map[entry.level] = (map[entry.level] || 0) + 1;
+        return map;
+      }, {}),
+      textValue: text ? text.value : null,
+      textLines: text && text.value ? text.value.split('\n').length : 0,
+      storage,
+    };
+  });
+}
+
+export async function logEvents(page, count, level = 'info', prefix = 'E2E 填充日志') {
+  return page.evaluate(([n, lvl, p]) => {
+    for (let i = 0; i < n; i++) window.FP.logEvent(lvl, p + ' #' + (i + 1));
+    return window.__DIAG_LOGS__.list().length;
+  }, [count, level, prefix]);
+}
+
+/* ---------------- 原生 saveFile mock ---------------- */
+
+export async function stubSaveFile(page) {
+  return page.evaluate(() => {
+    window.__saveFileMock = { calls: [], results: [] };
+    window.FP.desktop.saveFile = async function (opts) {
+      const call = {
+        suggestedName: opts.suggestedName,
+        filterName: opts.filterName,
+        filterExtensions: (opts.filterExtensions || []).slice(),
+        base64Length: String(opts.base64 || '').length,
+        base64: String(opts.base64 || ''),
+        at: Date.now(),
+      };
+      window.__saveFileMock.calls.push(call);
+      const next = window.__saveFileMock.results.shift();
+      if (next) return next;
+      return { ok: true, path: 'C:\\Users\\E2E\\Documents\\' + (opts.suggestedName || 'figureplay') };
+    };
+    return true;
+  });
+}
+
+export async function pushSaveFileResult(page, result) {
+  return page.evaluate((res) => {
+    window.__saveFileMock.results.push(res);
+    return window.__saveFileMock.results.length;
+  }, result);
+}
+
+export async function getSaveFileMock(page) {
+  return page.evaluate(() => {
+    if (!window.__saveFileMock) return null;
+    return {
+      calls: window.__saveFileMock.calls.map((call) => ({
+        suggestedName: call.suggestedName,
+        filterName: call.filterName,
+        filterExtensions: call.filterExtensions,
+        base64Length: call.base64Length,
+        base64: call.base64,
+      })),
+    };
+  });
+}
+
+export async function resetSaveFileMock(page) {
+  return page.evaluate(() => {
+    if (window.__saveFileMock) {
+      window.__saveFileMock.calls = [];
+      window.__saveFileMock.results = [];
+    }
+  });
+}
+
+/* ---------------- v1.5.1 真实桥回包（不 stub saveFile/checkUpdate） ---------------- */
+
+/**
+ * 通过应用真实 FP.desktop.saveFile() 建立真实 pending，并记录 Promise 结果。
+ * 不替换 FP.desktop 方法；回包由 window.chrome.webview mock 异步 emit。
+ */
+export async function startNativeBridgeCall(page, callId, opts) {
+  return page.evaluate(([id, options]) => {
+    window.__nativeBridgeResults = window.__nativeBridgeResults || {};
+    const started = performance.now();
+    window.__nativeBridgeResults[id] = { state: 'pending', started };
+    window.FP.desktop.saveFile(options).then((result) => {
+      window.__nativeBridgeResults[id] = {
+        state: 'resolved', result, elapsed: performance.now() - started,
+      };
+    }).catch((err) => {
+      window.__nativeBridgeResults[id] = {
+        state: 'rejected', error: String(err && err.message ? err.message : err),
+        elapsed: performance.now() - started,
+      };
+    });
+    return true;
+  }, [callId, opts]);
+}
+
+export async function getNativeBridgeResult(page, callId) {
+  return page.evaluate((id) => {
+    const entry = window.__nativeBridgeResults && window.__nativeBridgeResults[id];
+    return entry ? JSON.parse(JSON.stringify(entry)) : null;
+  }, callId);
+}
+
+export async function waitNativeBridgeResult(page, callId, options = {}) {
+  const { timeout = 5000, label = `native bridge result ${callId}` } = options;
+  await waitFor(page, (id) => {
+    const entry = window.__nativeBridgeResults && window.__nativeBridgeResults[id];
+    return !!entry && entry.state !== 'pending';
+  }, callId, { timeout, label });
+  return getNativeBridgeResult(page, callId);
+}
+
+
 
 
 

@@ -822,3 +822,11 @@ html.is-desktop .desktop-badge { display: inline-flex; }
   background: var(--bg-soft); font-size: 11px; color: var(--muted);
 }
 .update-box span { flex: 1 1 240px; line-height: 1.5; }
+
+.diag-log-box { display: flex; flex-direction: column; gap: 6px; }
+#diag-log-text {
+  width: 100%; box-sizing: border-box; min-height: 92px; resize: vertical;
+  padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg-soft); color: var(--text-soft); font: 11px/1.5 Consolas, "Cascadia Mono", monospace;
+}
+.diag-log-actions { display: flex; gap: 6px; flex-wrap: wrap; }

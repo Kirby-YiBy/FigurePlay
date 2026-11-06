@@ -337,6 +337,24 @@
     const text = JSON.stringify(payload(profile), null, 2);
     const filename = safeFilename(profile.name);
     const blob = new Blob([text], { type: 'application/json' });
+    if (window.FP && window.FP.desktop && window.FP.desktop.available && typeof window.FP.desktop.saveFile === 'function') {
+      try {
+        const b64 = await FP.blobToBase64(blob);
+        const res = await window.FP.desktop.saveFile({
+          suggestedName: filename,
+          filterName: 'FigurePlay 配置',
+          filterExtensions: ['.json'],
+          base64: b64
+        });
+        if (res && res.ok) {
+          if (res.canceled) return false;
+          FP.toast('已导出配置「' + profile.name + '」' + (res.path ? '：' + res.path : ''), 'success', 3200);
+          return true;
+        }
+      } catch (e) {
+        // fallback to browser picker/download
+      }
+    }
     if (typeof window.showSaveFilePicker === 'function') {
       try {
         const handle = await window.showSaveFilePicker({

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -14,6 +15,15 @@ namespace FigurePlay.Desktop.SelfTest
     /// </summary>
     internal sealed partial class SelfTestRunner
     {
+        private static void CollectControls(Control root, List<Control> output)
+        {
+            foreach (Control control in root.Controls)
+            {
+                output.Add(control);
+                CollectControls(control, output);
+            }
+        }
+
         private Task<JObject> RunClosePrefsTestAsync()
         {
             JObject result = new JObject();
@@ -55,16 +65,32 @@ namespace FigurePlay.Desktop.SelfTest
                 int buttonCount = 0;
                 bool defaultMinimize = false;
                 bool rememberCheckbox = false;
+                bool buttonsAutoSize = true;
+                bool minimizeToTrayText = false;
+                bool exitTextFull = false;
                 List<string> buttonTexts = new List<string>();
+                List<Control> allControls = new List<Control>();
                 using (CloseConfirmDialog dialog = new CloseConfirmDialog())
                 {
-                    foreach (Control control in dialog.Controls)
+                    CollectControls(dialog, allControls);
+                    foreach (Control control in allControls)
                     {
                         Button button = control as Button;
                         if (button != null)
                         {
                             buttonCount++;
                             buttonTexts.Add(button.Text);
+                            buttonsAutoSize = false; // 由下方专门统计代替
+                            if (button.Text.IndexOf("托盘", StringComparison.Ordinal) >= 0 &&
+                                button.Text.IndexOf("最小化", StringComparison.Ordinal) >= 0)
+                            {
+                                minimizeToTrayText = true;
+                            }
+
+                            if (button.Text.IndexOf("退出程序", StringComparison.Ordinal) >= 0)
+                            {
+                                exitTextFull = true;
+                            }
                         }
 
                         if (control is CheckBox)
@@ -75,7 +101,10 @@ namespace FigurePlay.Desktop.SelfTest
 
                     defaultMinimize = dialog.AcceptButton is Button &&
                                       ((Button)dialog.AcceptButton).Text.IndexOf("最小化", StringComparison.Ordinal) >= 0;
+                    buttonsAutoSize = allControls.OfType<Button>().All(b => b.AutoSize) &&
+                                      allControls.OfType<Button>().All(b => b.Width >= b.PreferredSize.Width);
                     result["dialogTitle"] = dialog.Text;
+                    result["dialogSize"] = dialog.Width + "x" + dialog.Height;
                 }
 
                 string realAfter = SnapshotFile(realPrefsPath);
@@ -94,12 +123,16 @@ namespace FigurePlay.Desktop.SelfTest
                 result["buttonTexts"] = new JArray(buttonTexts.ToArray());
                 result["defaultMinimize"] = defaultMinimize;
                 result["rememberCheckbox"] = rememberCheckbox;
+                result["buttonsAutoSize"] = buttonsAutoSize;
+                result["minimizeToTrayText"] = minimizeToTrayText;
+                result["exitTextFull"] = exitTextFull;
                 result["realPrefsUntouched"] = realUntouched;
 
                 bool ok = isolated &&
                           saveMinimize && loadMinimize && persistedMinimize &&
                           saveExit && loadExit && fileExists &&
                           buttonCount == 3 && defaultMinimize && rememberCheckbox &&
+                          buttonsAutoSize && minimizeToTrayText && exitTextFull &&
                           realUntouched;
                 result["ok"] = ok;
                 if (!ok)
@@ -109,7 +142,9 @@ namespace FigurePlay.Desktop.SelfTest
                                       " persisted=" + persistedMinimize +
                                       " saveExit=" + saveExit + " loadExit=" + loadExit +
                                       " buttons=" + buttonCount + " defaultMin=" + defaultMinimize +
-                                      " remember=" + rememberCheckbox + " realUntouched=" + realUntouched;
+                                      " remember=" + rememberCheckbox + " autoSize=" + buttonsAutoSize +
+                                      " minimizeTray=" + minimizeToTrayText + " exitFull=" + exitTextFull +
+                                      " realUntouched=" + realUntouched;
                 }
             }
             catch (Exception ex)
