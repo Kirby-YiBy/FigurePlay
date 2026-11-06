@@ -210,6 +210,10 @@ namespace FigurePlay.Desktop.SelfTest
                 JObject config1Label = await RunConfig1LabelWysiwygTestAsync();
                 _report["config1Label"] = config1Label;
 
+                // 6.2) v1.4.2 配置模板外部持久化（隔离 outDir\configs；reload 后从宿主文件恢复）
+                JObject configPersistence = await RunConfigPersistenceTestAsync();
+                _report["configPersistence"] = configPersistence;
+
                 // v1.3.3/1.4.1：所有 PowerPoint 用例（含 config1 编号导出）完成后再统一 shutdown 并检查残留
                 JObject powerPointLifecycle = await RunPowerPointLifecycleCheckAsync();
                 _report["powerPointLifecycle"] = powerPointLifecycle;
@@ -294,6 +298,15 @@ namespace FigurePlay.Desktop.SelfTest
                 if (!screenshot.Value<bool>("ok"))
                 {
                     failures.Add("窗口截图失败：" + (screenshot.Value<string>("error") ?? "未知原因"));
+                }
+
+                bool configPersistenceOk = _report["configPersistence"] is JObject &&
+                                           ((JObject)_report["configPersistence"]).Value<bool>("ok");
+                if (!configPersistenceOk)
+                {
+                    JObject cfgPersist = _report["configPersistence"] as JObject;
+                    failures.Add("配置模板持久化测试失败：" +
+                                 (cfgPersist == null ? "未生成报告" : (cfgPersist.Value<string>("error") ?? "未知原因")));
                 }
 
                 bool config1LabelOk = _report["config1Label"] is JObject &&

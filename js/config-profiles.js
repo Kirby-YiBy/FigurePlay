@@ -15,6 +15,9 @@
   let profiles = [];
   let importDraft = null;
   let ready = false;
+  let hostPath = '';
+  let hostSaveChain = Promise.resolve();
+  let hostSaveWarned = false;
   const el = {};
 
   function byId(id) { return document.getElementById(id); }
@@ -32,26 +35,107 @@
     return String(name || 'config').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_').slice(0, 50) + '.figureplay.json';
   }
 
-  function loadProfiles() {
+  function sanitizeList(arr) {
+    return Array.isArray(arr) ? arr.filter(function (p) {
+      return p && p.type === SCHEMA && p.schemaVersion <= SCHEMA_VERSION;
+    }).slice(0, MAX_PROFILES) : [];
+  }
+
+  function readLocalProfiles() {
     try {
       const raw = localStorage.getItem(KEY);
-      const arr = raw ? JSON.parse(raw) : [];
-      profiles = Array.isArray(arr) ? arr.filter(function (p) {
-        return p && p.type === SCHEMA && p.schemaVersion <= SCHEMA_VERSION;
-      }).slice(0, MAX_PROFILES) : [];
+      return sanitizeList(raw ? JSON.parse(raw) : []);
     } catch (e) {
-      profiles = [];
+      return [];
     }
   }
 
-  function persistProfiles() {
+  function writeLocalProfiles() {
     try {
       localStorage.setItem(KEY, JSON.stringify(profiles.slice(0, MAX_PROFILES)));
       return true;
     } catch (e) {
-      FP.toast('配置保存失败：本机存储空间不足或不可用', 'error', 5000);
       return false;
     }
+  }
+
+  function desktopStore() {
+    const d = window.FP && window.FP.desktop;
+    if (d && d.available && typeof d.loadConfigProfiles === 'function' && typeof d.saveConfigProfiles === 'function') {
+      return d;
+    }
+    return null;
+  }
+
+  function updateStorageHint() {
+    if (!el.storageHint) return;
+    if (hostPath) {
+      el.storageHint.textContent = '桌面版本机配置：' + hostPath + '（每次保存自动生成时间戳备份）';
+    } else if (desktopStore()) {
+      el.storageHint.textContent = '桌面版配置会写入本机文件并自动备份；浏览器版保存在浏览器本地。';
+    } else {
+      el.storageHint.textContent = '配置保存在当前浏览器本地；换电脑请用“导出 JSON”迁移。';
+    }
+  }
+
+  async function loadProfiles() {
+    profiles = readLocalProfiles();
+    const store = desktopStore();
+    if (!store) {
+      updateStorageHint();
+      return;
+    }
+    try {
+      const res = await store.loadConfigProfiles();
+      if (!res || !res.ok) throw new Error((res && res.error) || '本机配置文件读取失败');
+      if (res.path) hostPath = String(res.path);
+      const hostProfiles = sanitizeList(res.profiles || []);
+      const hostIds = {};
+      hostProfiles.forEach(function (p) { hostIds[p.id] = true; });
+      const extraLocal = profiles.filter(function (p) { return !hostIds[p.id]; });
+      if (!res.exists && profiles.length) {
+        // 旧版 localStorage → 新版本机文件迁移
+        profiles = profiles.slice(0, MAX_PROFILES);
+        await store.saveConfigProfiles(profiles.slice());
+      } else if (res.exists || hostProfiles.length) {
+        profiles = hostProfiles.concat(extraLocal).slice(0, MAX_PROFILES);
+        if (extraLocal.length) await store.saveConfigProfiles(profiles.slice());
+      } else {
+        profiles = hostProfiles;
+      }
+      writeLocalProfiles();
+    } catch (e) {
+      // 保留 localStorage 作为回退，不阻塞使用
+      if (!hostSaveWarned) {
+        hostSaveWarned = true;
+        setTimeout(function () {
+          FP.toast('本机配置文件读取失败，已使用浏览器本地备份：' + (e.message || e), 'error', 6000);
+        }, 0);
+      }
+    }
+    updateStorageHint();
+  }
+
+  function persistProfiles() {
+    const localOk = writeLocalProfiles();
+    const store = desktopStore();
+    if (store) {
+      hostSaveChain = hostSaveChain.then(function () {
+        return store.saveConfigProfiles(profiles.slice());
+      }).then(function (res) {
+        if (res && res.path) hostPath = String(res.path);
+        updateStorageHint();
+      }).catch(function (e) {
+        if (!hostSaveWarned) {
+          hostSaveWarned = true;
+          FP.toast('本机配置文件写入失败（浏览器本地备份仍保留）：' + (e.message || e), 'error', 6000);
+        }
+      });
+    }
+    if (!localOk && !store) {
+      FP.toast('配置保存失败：本机存储空间不足或不可用', 'error', 5000);
+    }
+    return localOk || !!store;
   }
 
   function normalizeStoredProfile(raw, forceNewId) {
@@ -369,13 +453,14 @@
     applyProfile(importDraft.profile, false);
   }
 
-  function init() {
+  async function init() {
     if (ready) return;
     ready = true;
     el.count = byId('config-count');
     el.active = byId('config-active');
     el.activeName = byId('config-active-name');
     el.activeDesc = byId('config-active-desc');
+    el.storageHint = byId('config-storage-hint');
     el.btnSave = byId('btn-config-save');
     el.btnManage = byId('btn-config-manage');
     el.dialog = byId('config-dialog');
@@ -397,7 +482,7 @@
     el.importSave = byId('config-import-save');
     el.importCancel = byId('config-import-cancel');
 
-    loadProfiles();
+    await loadProfiles();
     updateCount();
     renderList();
     fillSaveSummary();
@@ -448,7 +533,7 @@
     importJson: importJsonText,
     exportProfile: exportProfile,
     openDialog: openDialog,
-    reload: function () { loadProfiles(); updateCount(); renderList(); },
+    reload: async function () { await loadProfiles(); updateCount(); renderList(); },
     clear: function () { profiles = []; persistProfiles(); updateCount(); renderList(); }
   };
 

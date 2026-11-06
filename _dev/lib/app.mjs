@@ -2681,6 +2681,8 @@ export async function getConfigUiState(page) {
         activeVisible: visible('config-active'),
         activeName: text('config-active-name'),
         activeDesc: text('config-active-desc'),
+        storageHintText: text('config-storage-hint'),
+        storageHintVisible: visible('config-storage-hint'),
         dialogOpen: !!dialog && dialog.open === true,
         nameValue: val('config-name'),
         descValue: val('config-desc'),

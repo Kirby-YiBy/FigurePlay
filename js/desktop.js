@@ -46,6 +46,14 @@
       }
       return;
     }
+    if ((data.type === 'config-profiles' || data.type === 'config-profiles-saved') && data.requestId) {
+      const entry = pending.get(data.requestId);
+      if (!entry) return;
+      pending.delete(data.requestId);
+      clearTimeout(entry.timer);
+      entry.resolve(data);
+      return;
+    }
     if ((data.type === 'clipboard-image' || data.type === 'fig-imported') && data.requestId) {
       const entry = pending.get(data.requestId);
       if (!entry) return;
@@ -162,6 +170,53 @@
         pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
         try {
           webview.postMessage(JSON.stringify({ type: 'export-vector-pdf', requestId: requestId, spec: spec }));
+        } catch (err) {
+          pending.delete(requestId);
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+    },
+    /**
+     * 从桌面宿主读取持久化配置模板（%APPDATA%\FigurePlay\configs）。
+     * @returns {Promise<{ok:boolean,profiles:Array,path:string,exists:boolean}>}
+     */
+    loadConfigProfiles: function () {
+      if (!available) return Promise.reject(new Error('当前为浏览器模式，配置保存在浏览器本地'));
+      return new Promise(function (resolve, reject) {
+        const requestId = 'cfgload-' + (++seq) + '-' + Date.now().toString(36);
+        const timer = setTimeout(function () {
+          pending.delete(requestId);
+          reject(new Error('读取本机配置文件超时'));
+        }, 12000);
+        pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+        try {
+          webview.postMessage(JSON.stringify({ type: 'load-config-profiles', requestId: requestId }));
+        } catch (err) {
+          pending.delete(requestId);
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+    },
+    /**
+     * 把配置模板写回桌面宿主的持久化目录（带时间戳备份）。
+     * @param {Array} profiles
+     */
+    saveConfigProfiles: function (profiles) {
+      if (!available) return Promise.reject(new Error('当前为浏览器模式，配置保存在浏览器本地'));
+      return new Promise(function (resolve, reject) {
+        const requestId = 'cfgsave-' + (++seq) + '-' + Date.now().toString(36);
+        const timer = setTimeout(function () {
+          pending.delete(requestId);
+          reject(new Error('写入本机配置文件超时'));
+        }, 15000);
+        pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+        try {
+          webview.postMessage(JSON.stringify({
+            type: 'save-config-profiles', requestId: requestId,
+            profiles: Array.isArray(profiles) ? profiles : []
+          }));
         } catch (err) {
           pending.delete(requestId);
           clearTimeout(timer);

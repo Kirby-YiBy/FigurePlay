@@ -2432,6 +2432,260 @@ const labelSpecBBoxScenario = {
   },
 };
 
+/* ----------------------------- Z 配置外部文件持久化 ----------------------------- */
+const hostConfigPersistenceScenario = {
+  code: 'Z',
+  name: 'config-host-persistence',
+  title: '配置宿主持久化',
+  description: '桌面宿主 mock：配置模块 init 调 FP.desktop.loadConfigProfiles；宿主无文件但 localStorage 有配置→迁移并调 save；#config-storage-hint 显示宿主路径；保存/删除/导入触发 host save；清空 localStorage 后从 host 恢复；浏览器模式仍仅 localStorage',
+  async run(ctx) {
+    const { page } = ctx;
+    const host = {
+      exists: false,
+      profiles: [],
+      path: 'C:\\Users\\E2E\\AppData\\Roaming\\FigurePlay\\configs\\profiles.json',
+    };
+    const hostPathPattern = /FigurePlay\\configs\\profiles\.json/;
+    const oldProfile = {
+      id: 'cfg-old-local-1',
+      type: 'figureplay-config',
+      schemaVersion: 1,
+      name: '旧版本地配置',
+      description: 'v1.4.1 localStorage 迁移测试',
+      appVersion: '1.4.1',
+      createdAt: '2026-11-06T10:00:00.000Z',
+      layout: { rows: 2, cols: 2, widthMm: 170, colGap: 2, rowGap: 2, margin: 0, aspectW: 4, aspectH: 3, merges: [] },
+      label: { show: true, scheme: 'alpha-paren', start: 1, position: 'tl', fontFamily: 'times', fontSizePt: 9 },
+      export: { format: 'png', dpi: 300, trimPdf: false, vectorPdf: true, transparent: false },
+    };
+    const respondLoad = async (request, payload) => {
+      await app.sendBridgeMessage(page, {
+        type: 'config-profiles',
+        requestId: request.requestId,
+        ok: true,
+        profiles: payload.profiles,
+        path: host.path,
+        exists: payload.exists,
+      });
+    };
+    const waitHostSave = async (minCount, label) => {
+      const request = await app.waitNewBridgeMessage(page, 'save-config-profiles', minCount,
+        { timeout: 12000, label: label || 'host save-config-profiles' });
+      const profiles = Array.isArray(request.profiles) ? request.profiles : [];
+      host.exists = true;
+      host.profiles = profiles;
+      await app.sendBridgeMessage(page, {
+        type: 'config-profiles-saved',
+        requestId: request.requestId,
+        ok: true,
+        path: host.path,
+        bytes: JSON.stringify(profiles).length,
+      });
+      return { request, profiles };
+    };
+    const saveCount = async () => app.bridgeMessageCount(page, 'save-config-profiles');
+    const loadCount = async () => app.bridgeMessageCount(page, 'load-config-profiles');
+
+    // 1) 桌面宿主 mock + 预先存在的 localStorage 旧配置（模拟旧版本用户）
+    await app.installDesktopBridgeMock(page);
+    await page.addInitScript(({ key, profile }) => {
+      try {
+        if (!sessionStorage.getItem('__fp_e2e_seeded')) {
+          localStorage.setItem(key, JSON.stringify([profile]));
+          sessionStorage.setItem('__fp_e2e_seeded', '1');
+        }
+      } catch (err) { /* ignore */ }
+    }, { key: 'figureplay.configProfiles.v1', profile: oldProfile });
+    await app.openAppReady(page);
+    if (!(await app.ensureV140(ctx, page))) return;
+
+    const firstLoad = await app.waitNewBridgeMessage(page, 'load-config-profiles', 1,
+      { timeout: 12000, label: 'init load-config-profiles' });
+    ctx.check('桌面宿主可用：配置模块 init 调用 FP.desktop.loadConfigProfiles()',
+      !!firstLoad && firstLoad.type === 'load-config-profiles'
+      && await page.evaluate(() => !!window.FP.desktop.available),
+      { requestType: firstLoad && firstLoad.type });
+    ctx.check('宿主初始无文件但 localStorage 有旧配置（迁移前置条件）',
+      host.exists === false && (await app.getConfigUiState(page)).storage.length === 1,
+      { hostExists: host.exists, localCount: (await app.getConfigUiState(page)).storage.length });
+
+    await respondLoad(firstLoad, { profiles: [], exists: false });
+    const migrated = await waitHostSave(1, 'migration save');
+    ctx.check('宿主无文件 + localStorage 有配置 → 迁移并调用 saveConfigProfiles（含旧配置 id）',
+      migrated.profiles.length === 1 && migrated.profiles[0].id === oldProfile.id,
+      { names: migrated.profiles.map((p) => p.name), ids: migrated.profiles.map((p) => p.id) });
+    let cfg = await app.waitConfigState(page, (state) => (state.ui.countText || '').indexOf('1') >= 0
+      && /FigurePlay\\configs\\profiles\.json/.test(state.ui.storageHintText || ''), null,
+    { label: 'migration complete + storage hint' });
+    ctx.check('#config-storage-hint 显示宿主路径（迁移后）',
+      hostPathPattern.test(cfg.ui.storageHintText || ''), cfg.ui.storageHintText);
+    ctx.check('迁移后旧配置仍保留在 localStorage（不清空）',
+      cfg.storage.length === 1 && cfg.storage.names[0] === oldProfile.name,
+      { local: cfg.storage.names });
+    ctx.check('迁移后列表显示旧配置（1 个）',
+      cfg.ui.listItems.length === 1 && cfg.ui.listItems[0].name === oldProfile.name,
+      cfg.ui.listItems.map((item) => item.name));
+
+    // 2) reload：宿主文件已存在 → 从 host 加载/恢复
+    const firstSaveBaseline = await saveCount();
+    await page.reload();
+    await app.openAppReady(page);
+    const secondLoad = await app.waitNewBridgeMessage(page, 'load-config-profiles', 1,
+      { timeout: 12000, label: 'reload load-config-profiles' });
+    await respondLoad(secondLoad, { profiles: host.profiles, exists: true });
+    cfg = await app.waitConfigState(page, (state) => state.storage.length === 1, null,
+      { label: 'host reload restore' });
+    ctx.check('reload 后从宿主加载配置（数量/名称/路径提示正确）',
+      cfg.storage.length === 1 && cfg.storage.names[0] === oldProfile.name
+      && hostPathPattern.test(cfg.ui.storageHintText || '')
+      && (await saveCount()) === 0,
+      { count: cfg.storage.length, hint: cfg.ui.storageHintText, saveCalls: await saveCount() });
+    cfg = await app.getConfigUiState(page);
+    ctx.check('宿主已有文件且无额外本地配置时不再触发迁移 save',
+      cfg.storage.length === 1, { saveCalls: await saveCount(), saveBaseline: firstSaveBaseline });
+
+    // 3) 保存新配置 → 调 host save
+    await app.openConfigDialog(page, 'save');
+    await app.setConfigForm(page, { name: '宿主新配置', description: '写入宿主文件测试' });
+    const saveBaseline2 = await saveCount();
+    await app.saveCurrentConfig(page);
+    const saveNew = await waitHostSave(saveBaseline2 + 1, 'save new config');
+    ctx.check('保存配置触发 saveConfigProfiles（宿主收到 2 条：旧配置+新配置）',
+      saveNew.profiles.length === 2
+      && saveNew.profiles.map((p) => p.name).indexOf('宿主新配置') >= 0,
+      { names: saveNew.profiles.map((p) => p.name) });
+    cfg = await app.getConfigUiState(page);
+    ctx.check('宿主保存后 #config-count=2、路径提示保持宿主路径',
+      /本机\s*2\s*个/.test(cfg.ui.countText || '') && hostPathPattern.test(cfg.ui.storageHintText || ''),
+      { count: cfg.ui.countText, hint: cfg.ui.storageHintText });
+    await app.closeConfigDialog(page);
+
+    // 4) 删除配置 → 调 host save（confirm accept）
+    await app.openConfigDialog(page);
+    const deleteBaseline = await saveCount();
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
+    await page.locator('#config-list .config-item').filter({ hasText: '旧版本地配置' })
+      .locator('[data-action="delete"]').first().click();
+    const deleteSave = await waitHostSave(deleteBaseline + 1, 'delete host save');
+    ctx.check('删除配置触发 host save（宿主仅剩「宿主新配置」）',
+      deleteSave.profiles.length === 1 && deleteSave.profiles[0].name === '宿主新配置',
+      { names: deleteSave.profiles.map((p) => p.name) });
+
+    // 5) 导入 JSON 并保存 → 调 host save
+    const importFile = await app.writeConfigJsonFile(path.join(ctx.runDir, 'tmp'), 'host-import.figureplay.json', {
+      type: 'figureplay-config', schemaVersion: 1, name: '导入到宿主配置',
+      description: 'import → host persist', appVersion: '1.4.2', createdAt: new Date().toISOString(),
+      layout: { rows: 3, cols: 2, widthMm: 170, colGap: 2, rowGap: 2 },
+      label: { scheme: 'number-dot', start: 2, position: 'bc', fontFamily: 'arial', fontSizePt: 10 },
+      export: { format: 'pdf', dpi: 300, trimPdf: true, trimMarginMm: 1, vectorPdf: true },
+    });
+    await app.importConfigFile(page, importFile);
+    await app.waitConfigState(page, (state) => state.ui.importPreviewVisible === true, null,
+      { label: 'host import preview' });
+    const importBaseline = await saveCount();
+    await page.locator('#config-import-save').click();
+    const importSave = await waitHostSave(importBaseline + 1, 'import host save');
+    ctx.check('导入配置点“保存到本机”触发 host save（宿主 2 条，含导入名称）',
+      importSave.profiles.length === 2
+      && importSave.profiles.map((p) => p.name).indexOf('导入到宿主配置') >= 0,
+      { names: importSave.profiles.map((p) => p.name) });
+    await app.closeConfigDialog(page);
+
+    // 6) 清空 localStorage 后 reload → 从 host mock 恢复
+    const hostNamesBeforeReload = host.profiles.map((p) => p.name);
+    await page.evaluate(() => { try { localStorage.removeItem('figureplay.configProfiles.v1'); } catch (err) { /* ignore */ } });
+    await page.reload();
+    await app.openAppReady(page);
+    const thirdLoad = await app.waitNewBridgeMessage(page, 'load-config-profiles', 1,
+      { timeout: 12000, label: 'after local clear load-config-profiles' });
+    await respondLoad(thirdLoad, { profiles: host.profiles, exists: true });
+    cfg = await app.waitConfigState(page, (state) => state.storage.length === 2, null,
+      { label: 'host restore after local clear' });
+    ctx.check('清空 localStorage 后从宿主文件恢复配置（数量/名称一致）',
+      cfg.storage.length === 2
+      && JSON.stringify(cfg.storage.names) === JSON.stringify(hostNamesBeforeReload)
+      && hostPathPattern.test(cfg.ui.storageHintText || ''),
+      { count: cfg.storage.length, names: cfg.storage.names, hint: cfg.ui.storageHintText });
+    ctx.check('恢复后重新写入 localStorage（宿主 → 本地缓存）',
+      (await page.evaluate(() => !!localStorage.getItem('figureplay.configProfiles.v1'))) === true);
+
+    // 7) 配置存储不影响主题/历史/项目自动保存 payload
+    await app.setAppearance(page, 'dark', 'violet');
+    await app.waitHistoryCommit(page);
+    const historyBefore = await app.getHistoryState(page);
+    const lookBefore = await app.getAppearanceState(page);
+    await app.openConfigDialog(page, 'save');
+    await app.setConfigForm(page, { name: '宿主隔离配置', description: '主题/历史隔离' });
+    const isolationBaseline = await saveCount();
+    await app.saveCurrentConfig(page);
+    await waitHostSave(isolationBaseline + 1, 'isolation host save');
+    await app.closeConfigDialog(page);
+    await app.waitHistoryCommit(page);
+    const lookAfter = await app.getAppearanceState(page);
+    const historyAfter = await app.getHistoryState(page);
+    ctx.check('宿主配置保存不改变主题/外观（dark+violet）',
+      lookAfter.html.theme === 'dark' && lookAfter.html.accent === 'violet'
+      && lookBefore.html.theme === lookAfter.html.theme,
+      lookAfter.html);
+    ctx.check('宿主配置保存不新增项目历史记录',
+      JSON.stringify(historyAfter) === JSON.stringify(historyBefore),
+      { before: historyBefore, after: historyAfter });
+    await app.waitForAutosave(page, (saved) => !!saved.currentPage && Array.isArray(saved.pages),
+      { timeout: 12000, label: 'autosave after host config' }).catch(() => null);
+    const savedProject = await app.readSavedSession(page);
+    const savedRaw = JSON.stringify(savedProject && savedProject.payload);
+    ctx.check('项目自动保存 payload 不含配置/宿主路径（configProfiles/figureplay-config/AppData）',
+      !!savedProject && !/configProfiles|figureplay-config|AppData/i.test(savedRaw),
+      { hasConfig: /configProfiles|figureplay-config|AppData/i.test(savedRaw) });
+
+    // 8) 浏览器模式仍 localStorage 且提示不同
+    const browser = page.context().browser();
+    const plainContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const plainPage = await plainContext.newPage();
+    let plainHint = '';
+    try {
+      await app.openAppReady(plainPage);
+      const plainCfg0 = await app.getConfigUiState(plainPage);
+      plainHint = plainCfg0.ui.storageHintText || '';
+      ctx.check('浏览器模式：无桌面桥/配置初始为空，提示为浏览器本地存储',
+        await plainPage.evaluate(() => !window.__figplayBridge && !window.FP.desktop.available)
+        && plainCfg0.storage.length === 0
+        && /浏览器本地|浏览器/.test(plainHint)
+        && !/FigurePlay\\configs/.test(plainHint),
+        { hint: plainHint });
+      await app.openConfigDialog(plainPage, 'save');
+      await app.setConfigForm(plainPage, { name: '浏览器本地配置', description: 'browser localStorage' });
+      const plainCfg = await app.saveCurrentConfig(plainPage);
+      ctx.check('浏览器模式保存配置写入 localStorage（无 host 消息）',
+        plainCfg.storage.length === 1 && plainCfg.storage.names[0] === '浏览器本地配置'
+        && (await plainPage.evaluate(() => !!localStorage.getItem('figureplay.configProfiles.v1'))),
+        { names: plainCfg.storage.names });
+      await app.closeConfigDialog(plainPage);
+      ctx.check('浏览器模式 #config-storage-hint 为非宿主提示',
+        !/FigurePlay\\configs/.test((await app.getConfigUiState(plainPage)).ui.storageHintText || ''));
+    } finally {
+      await plainContext.close();
+    }
+
+    await app.openConfigDialog(page);
+    await ctx.screenshot('config-host-persistence');
+    await app.closeConfigDialog(page);
+
+    ctx.evidence.hostConfig = {
+      hostPath: host.path,
+      migration: { fromLocal: oldProfile.name, savedNames: migrated.profiles.map((p) => p.name) },
+      reloadFromHost: { names: hostNamesBeforeReload, saveCalls: await saveCount() },
+      saveNew: saveNew.profiles.map((p) => p.name),
+      deleteSave: deleteSave.profiles.map((p) => p.name),
+      importSave: importSave.profiles.map((p) => p.name),
+      restoreAfterLocalClear: cfg.storage.names,
+      browserMode: { localStorage: '浏览器本地配置', hint: plainHint },
+      isolation: { theme: lookAfter.html, historyBefore: historyBefore.undoCount, historyAfter: historyAfter.undoCount },
+    };
+    await app.api.clearAll(page);
+  },
+};
+
 export const scenariosV13 = [
   gridCustomScenario,
   saveAsScenario,
@@ -2443,4 +2697,5 @@ export const scenariosV13 = [
   appearanceScenario,
   configProfileScenario,
   labelSpecBBoxScenario,
+  hostConfigPersistenceScenario,
 ];

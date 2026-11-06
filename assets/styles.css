@@ -790,3 +790,8 @@ html.is-desktop .desktop-badge { display: inline-flex; }
 .config-import-preview p { margin: 3px 0; font-size: 10.5px; line-height: 1.5; color: var(--text-soft); white-space: pre-wrap; }
 .config-import-preview .config-import-summary { color: var(--muted); }
 .config-import-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+
+.config-storage-hint {
+  margin: 8px 0 0; font-size: 10px; line-height: 1.45;
+  color: var(--faint); word-break: break-all;
+}

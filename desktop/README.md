@@ -23,16 +23,17 @@
    `WebView2Loader.dll`、`wwwroot`），首次启动自解压到 `%LOCALAPPDATA%\FigurePlay\bin\app-<hash>`，
    从任意目录双击即可运行，不依赖旁边 dll/assets；仍依赖系统 **WebView2 Runtime**。
 
-> 本候选包内嵌的是 **FigurePlay 应用 v1.4.1**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
+> 本候选包内嵌的是 **FigurePlay 应用 v1.4.2**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
 > ink 裁剪并入编号排版盒 + 至少 1mm 安全边距、行/列间距支持 -50～80mm、负间距下选中/悬停顶层描边、
 > 界面外观（浅色/深色/跟随系统 + 7 种主题色）、配置模板（`js/config-profiles.js`）、
-> 矢量 PDF + crop、saveAs 开关、`.fig` EMF 保留等；v1.4.1 起 spec 额外携带预览文字 bbox
-> `textLeftMm/textTopMm/textWmm/textHmm`，用于编号 WYSIWYG 校正）；`dist\wwwroot` 与构建时
-> `E:\FigurePlay` 冻结源文件 **逐字节一致**（20 个文件），桌面版桥协议见第 4 节。
+> 矢量 PDF + crop、saveAs 开关、`.fig` EMF 保留等；v1.4.1 起 spec 携带预览文字 bbox 用于编号 WYSIWYG；
+> **v1.4.2 配置模板持久化到 `%APPDATA%\FigurePlay\configs\profiles.json`（宿主原子写 + 时间戳备份），
+> 清除 WebView2 缓存/更新程序后仍可恢复**）；`dist\wwwroot` 与构建时 `E:\FigurePlay` 冻结源文件
+> **逐字节一致**（20 个文件），桌面版桥协议见第 4 节。
 
 技术栈：**.NET Framework 4.8**（Windows 10/11 自带运行时，最终用户无需安装 .NET）
-\+ **Microsoft.Web.WebView2**（WinForms）。多文件版约 2.36 MB（dist 27 文件，wwwroot 20 + 7 运行文件），
-单文件版约 **0.82 MB**（862,208 B）。
+\+ **Microsoft.Web.WebView2**（WinForms）。多文件版约 2.38 MB（dist 27 文件，wwwroot 20 + 7 运行文件），
+单文件版约 **0.83 MB**（871,424 B）。
 
 ---
 
@@ -86,7 +87,7 @@ desktop\
 │   ├─ WebView2Loader.dll
 │   ├─ Newtonsoft.Json.dll
 │   ├─ 使用说明.txt
-│   └─ wwwroot\                  ← 构建时复制的最新网页应用（v1.4.1：多页/分组/撤销/矢量 PDF/crop/外观主题/配置模板，20 个文件）
+│   └─ wwwroot\                  ← 构建时复制的最新网页应用（v1.4.2：多页/分组/撤销/矢量 PDF/crop/外观主题/配置模板，20 个文件）
 ├─ dist-single\                  ← 单文件版（目录中只有 FigurePlay.exe）
 │   └─ FigurePlay.exe
 ├─ selftest\                     ← 多文件版最近一次自测输出
@@ -136,8 +137,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 10. 打印两个 exe 的路径/大小/SHA256、`app.js` SHA256、dist 大小、zip 大小、自测结果与总耗时。
 
 > 构建机会**串行**跑两次完整自测（先多文件、退出后再单文件；含两次 MATLAB 启动 + 首次 PowerPoint
-> 冷启动，持久会话让后续导出 <1s，另含外观主题 PNG 导出比对、编号中心与 config1 WYSIWYG 校验），
-> 总耗时约 **4–5 分钟**（本机实测 292.2s）。可用 `-SkipSingleFile` 只构建多文件版，或用 `-SkipSelfTest` 跳过自测。
+> 冷启动，持久会话让后续导出 <1s，另含外观主题/编号中心/config1 WYSIWYG/配置持久化/reload 恢复校验），
+> 总耗时约 **5–6 分钟**（本机实测 326.3s）。可用 `-SkipSingleFile` 只构建多文件版，或用 `-SkipSelfTest` 跳过自测。
 
 ### 2.3 常用参数
 
@@ -343,6 +344,63 @@ Host → JS（失败）：`{"type":"vector-pdf-export","requestId":"<id>","ok":f
 宿主在收到网页端 `{"type":"app-ready","version":"..."}` 后立即回发（推荐路径），
 或轮询到 `window.__FIGPLAY__.ready === true` 后回发（兜底），只发一次。
 
+### 4.5 配置模板持久化（v1.4.2）
+
+配置模板不再只存在 WebView2 的 localStorage，而是由宿主写到 `%APPDATA%\FigurePlay\configs\profiles.json`
+（Roaming，**不在 WebView2 用户目录**）；清除 WebView2 缓存、更新 exe 后仍可恢复。
+
+JS → Host（读取）：
+
+```json
+{"type":"load-config-profiles","requestId":"<id>"}
+```
+
+Host → JS：
+
+```json
+{
+  "type": "config-profiles",
+  "requestId": "<id>",
+  "ok": true,
+  "profiles": [ ... ],
+  "path": "%APPDATA%\FigurePlay\configs\profiles.json",
+  "exists": true
+}
+```
+
+失败：`{"type":"config-profiles","requestId":"<id>","ok":false,"error":"中文原因"}`
+
+JS → Host（保存）：
+
+```json
+{"type":"save-config-profiles","requestId":"<id>","profiles":[ ... ]}
+```
+
+Host → JS：
+
+```json
+{
+  "type": "config-profiles-saved",
+  "requestId": "<id>",
+  "ok": true,
+  "path": "%APPDATA%\FigurePlay\configs\profiles.json",
+  "backupPath": "%APPDATA%\FigurePlay\configs\backups\profiles-20261106-135520.json",
+  "bytes": 1527
+}
+```
+
+失败：`{"type":"config-profiles-saved","requestId":"<id>","ok":false,"error":"中文原因"}`
+
+实现约束：
+- 保存先写 `profiles.<guid>.tmp` 再 `File.Replace` 原子替换；已有 `profiles.json` 时自动复制到
+  `backups\profiles-<UTC yyyyMMdd-HHmmss>.json`，最多保留 **20** 份；
+- UTF-8；profiles 最多 **100** 个、原始 JSON ≤ **2MB**；读取不存在返回空数组 + `exists:false`；
+  JSON 损坏返回可读错误（不崩溃），前端回退 localStorage；
+- `--selftest` 使用 `<outDir>\configs` 隔离目录，**绝不写真实 %APPDATA%**；正常模式使用
+  `%APPDATA%\FigurePlay\configs`；
+- `profiles.json` 文件结构：`{"schema":"figureplay-config-profiles","version":1,"savedAt":"<UTC ISO>","profiles":[...]}`，
+  读取兼容纯数组。
+
 ---
 
 ## 5. 原生 EMF 剪贴板转换（核心实现）
@@ -447,8 +505,8 @@ MATLAB 路径与版本会缓存（`MatlabLocator`），避免重复探测。
   - trim=0（安全边距 1mm）→ 页 **72.94×65.53mm**，四边余量 **1.02/1.02/1.02/1.02mm**，
     底部 9mm 条带编号墨迹 **279px**、`pdftotext` 提取到 `(a)`，编号完整不裁；
   - trim=2mm → 页 **74.93×67.56mm**，四边余量 **2.03/2.03/2.20/2.20mm**，底部编号墨迹 **275px**、文本正常；
-- **持久会话冷/热导出（v1.4.1 实测）**：多文件版首次导出 **26.9s**（含 PowerPoint 冷启动 24.9s）→ 第二次 **0.53s**
-  （提速 98.0%）；单文件版 **26.9s**（冷启动 24.6s）→ **0.53s**（提速 98.1%）；selftest 中连续导出 7 次复用
+- **持久会话冷/热导出（v1.4.2 实测）**：多文件版首次导出 **26.9s**（含 PowerPoint 冷启动 24.8s）→ 第二次 **0.55s**
+  （提速 97.9%）；单文件版 **27.9s**（冷启动 23.2s）→ **0.79s**（提速 97.2%）；selftest 中连续导出 7 次复用
   同一实例；结束显式 shutdown 后 `POWERPNT` 残留数为 **0**（用户原有实例不受影响）。
 
 ### 7.4 安全边距 + 二次墨迹校正（v1.3.2，解决“trim=0 时底部编号被裁”）
@@ -537,6 +595,27 @@ offsetX1/offsetY4/Times 9pt、trim=0）selftest 通过捕获 app 实际 spec + �
 - PDF 0 位图；trim 四边余量仍 ≈1–1.2mm、底部编号墨迹 328px 不裁；
 - 样例：`selftest\config1-label-wysiwyg.pdf`。
 
+### 7.7 配置模板外部持久化（v1.4.2）
+
+用户反馈“更新后配置模板丢失”。根因是测试清理时删掉了 `%LOCALAPPDATA%\FigurePlay\WebView2`（WebView2 用户数据），
+而不是正常升级逻辑；但为发布质量，v1.4.2 把配置模板迁到宿主本机文件并自动备份：
+
+- 正式路径：`%APPDATA%\FigurePlay\configs\profiles.json`（Roaming，与 WebView2 缓存解耦）；
+- 每次保存：临时文件 → `File.Replace` 原子替换 → 旧文件进入 `backups\profiles-<UTC时间戳>.json`，
+  最多保留 20 份；UTF-8；最多 100 个配置、JSON ≤2MB；
+- 配置模块启动时通过 `FP.desktop.loadConfigProfiles()` 从宿主读取，并与 localStorage 合并迁移；
+  每次保存/删除/导入调用 `saveConfigProfiles(profiles)` 写回；
+- `--selftest` 使用 `<outDir>\configs` 隔离目录（本机为 `desktop\selftest\configs`、`desktop\selftest-single\configs`），
+  真实 `%APPDATA%\FigurePlay\configs` 在自测期间**不存在/未被写入**；selftest 的 WebView2 使用独立
+  `WebView2-selftest` 用户目录，清 localStorage 不会碰用户数据。
+
+selftest（`configPersistence`）实测（多文件 / 单文件一致）：
+- 保存 2 个配置 → `selftest\configs\profiles.json`（829B，1 个配置）+ `backups\profiles-20261106-135520.json`（1527B）存在；
+- `loadConfigProfiles` 回读 2 个 → 删除后保存 1 个 → 文件同步 1 个、备份保留；
+- 清空 WebView2 selftest localStorage + `location.reload()` → 宿主文件恢复配置（reloadRecovered=True，
+  页面存储提示显示本机路径）；新 store 实例重新 Load 也可读（模拟重启/升级）；
+- 真实 APPDATA 路径检查：`%APPDATA%\FigurePlay\configs` 自测前后均不存在/未变化（realAppDataUntouched=True）。
+
 ---
 
 ## 8. `--selftest` 自测
@@ -562,6 +641,7 @@ dist\FigurePlay.exe --selftest --out .\selftest --screenshot .\selftest\my-shot.
 | 外观主题冒烟（v1.3.4） | WebView2 内 `__FIGPLAY__.setAppearance('dark','violet')` → 校验 html data-*、body 深色、`#figure-shell` 白；再恢复 `light/blue`；深/浅/恢复各导出一次 PNG 做逐字节比对 | `html[data-theme=dark]`/`data-accent=violet`、body 亮度 <110、figure-shell 白；深色与恢复后 PNG 均与浅色基准**逐字节一致**；console error 增量 0 |
 | 编号中心/锚点（v1.4.0） | 宿主级 3×2、bottom-center Arial 11、crop.x=5.546mm、trimMargin=1；`pdftotext -bbox` 提取 (a)/(b) 文本中心 | 文本中心 = cellCenter - finalCrop.x（±0.5mm；本机误差 -0.026/-0.003mm）；四边余量 1.02mm、底部编号墨迹 278px、0 位图 |
 | config1 编号 WYSIWYG（v1.4.1） | 应用内恢复 config1：2行×3列/170/4:3/colGap-4/rowGap1/autoPad、label bc/inset1.5/offsetX1/offsetY4/Times9、trim0；包装 `exportVectorPdf` 捕获 spec（含 text bbox），宿主 trace 取最终 crop，`pdftotext -bbox` 对 (a) 校验 | 垂直 top/bottom/center 误差 ≤0.35mm（本机 0.154/0.072/0.113mm）、水平中心 ≤0.05mm（本机 -0.011mm）、0 位图 |
+| 配置持久化（v1.4.2） | JS 桥保存 2 个配置 → 文件/备份 → 删除后保存 1 个 → 清 selftest WebView2 localStorage + reload → 从宿主文件恢复；检查真实 APPDATA 未写 | `<outDir>\configs\profiles.json` 存在且配置数同步（2→1）、backups 时间戳文件存在、reload 后恢复 ≥1 个、真实 `%APPDATA%\FigurePlay\configs` 未被写入；失败项不通过 |
 | 测试 EMF | `Metafile` 录制 900×600 EMF，保存为**真实 EMF**（文件头 01 00 00 00），以字节重建原生 `CF_ENHMETAFILE` 放入剪贴板 | 写入成功且 EMF 头校验通过 |
 | C# 转换 | 调用桥同一转换函数读取剪贴板 → PNG | `ok=true`、`sourceFormat=EMF`、宽度 4000–5200、PNG 签名正确、非空白、体积 <8MB |
 | 桥端到端 | 网页端真实 `postMessage` 发 `read-clipboard-image`，探针捕获宿主响应 | 收到且 `ok=true`；`emfBase64` 为真实 EMF、可被 `System.Drawing.Metafile` 重新打开、记录数/边界合法、与写入剪贴板的文件一致 |
@@ -602,40 +682,42 @@ selftest\
 ├─ app-vector-e2e-trimmed.pdf / .png    ← 应用级 trim 基础用例（77.39×60.11mm，余量 ≈0.85–1.02mm）
 ├─ app-vector-trim-label-1mm.pdf / .png ← 底部中间编号 + trim=0 安全边距 1mm 样张（72.94×65.53mm，余量 1.02mm）
 ├─ app-vector-trim-label-2mm.pdf / .png ← 底部中间编号 + trim=2mm 样张（74.93×67.56mm，余量 2.03–2.20mm）
+├─ configs\profiles.json    ← selftest 隔离的配置持久化文件（正常模式在 %APPDATA%\FigurePlay\configs）
+└─ configs\backups\profiles-*.json ← 保存时自动生成的时间戳备份（selftest 隔离样本）
 └─ screenshot.png            ← 应用窗口截图（上传 .fig + 底部编号后）
 ```
 
-本机（Windows 10.0.26200 / WebView2 156.0.4314.58 / MATLAB R2024b / PowerPoint 2021）v1.4.1 候选包结果：
-**多文件版与单文件版均 exitCode 0**（串行执行）。应用版本 1.4.1、host-ready 版本 1.4.1、exe FileVersion 1.4.1.0；
-应用就绪 ~8–33 ms；三栏布局 CSS 视口 1067×667、grid 244+527+296 px；EMF→PNG 4400×2933（~164 KB）；
-桥端到端 ~333–414 ms；应用 JS 桥 ~350–392 ms；MATLAB `.fig` 转换 ~30–35s；
-PowerPoint 首次导出 **26.9s**（冷启动 ~24.6–24.9s）→ 后续 **0.53s**（提速 98.0–98.1%），连续 7 次复用同一实例；
-**config1 编号 WYSIWYG（v1.4.1）**：垂直误差 top **0.154mm**/bottom **0.072mm**/center **0.113mm**（≤0.35mm），
-水平中心误差 **-0.011mm**（≤0.05mm），最终 crop=(2.846,1.506)mm（trace），0 位图；
-trim=0 四边余量 1.02/0.85/1.19/1.19mm、底部编号墨迹 328px；trim=2 四边 2.03–2.20mm；
-编号中心锚点用例误差 -0.026/-0.003mm；外观主题冒烟通过（body 亮度 17.5、figure-shell 白、PNG 逐字节一致）；
-selftest 结束显式 shutdown 后 POWERPNT 残留=0；console error 0；截图 1601×1001。
-整轮自测：多文件版 **141.6 s**、单文件版 **136.9 s**；完整构建（含双自测）**292.2 s**。
+本机（Windows 10.0.26200 / WebView2 156.0.4314.58 / MATLAB R2024b / PowerPoint 2021）v1.4.2 候选包结果：
+**多文件版与单文件版均 exitCode 0**（串行执行）。应用版本 1.4.2、host-ready 版本 1.4.2、exe FileVersion 1.4.2.0；
+应用就绪 ~22–46 ms；三栏布局 CSS 视口 1067×667、grid 244+527+296 px；EMF→PNG 4400×2933（~164 KB）；
+桥端到端 ~367–539 ms；应用 JS 桥 ~350–356 ms；MATLAB `.fig` 转换 ~34–42s；
+PowerPoint 首次导出 26.9s / 27.9s（冷启动 ~23.2–24.8s）→ 后续 0.55s / 0.79s（提速 97.2–97.9%），连续 7 次复用；
+**配置模板持久化（v1.4.2）**：保存 2 个→`<outDir>\configs\profiles.json`（829B）+ 时间戳备份（1527B）；
+删除后同步 1 个；清 WebView2 selftest localStorage + reload 后从宿主文件恢复；真实 APPDATA 未被写入；
+**config1 编号 WYSIWYG**：垂直 top/bottom/center 0.154/0.072/0.113mm（≤0.35mm）、水平 -0.011mm（≤0.05mm）；
+编号中心锚点 -0.026/-0.003mm；trim=0 四边 1.02/0.85/1.19/1.19mm、底部编号墨迹 328px；trim=2 四边 2.03–2.20mm；
+外观主题冒烟通过；selftest 结束显式 shutdown 后 POWERPNT 残留=0；console error 0；截图 1601×1001。
+整轮自测：多文件版 **166.5 s**、单文件版 **145.3 s**；完整构建（含双自测）**326.3 s**。
 
-### 8.4 v1.4.1 候选包核对
+### 8.4 v1.4.2 候选包核对
 
 | 文件 | 大小 | SHA256 |
 | --- | --- | --- |
-| `dist\FigurePlay.exe` | 331,776 B | `4819BE5D78D1354047D8A7A36FCF52DBA9F786D4EB76157A4EBB270C6BDA9985` |
-| `dist-single\FigurePlay.exe` | 862,208 B | `0CFCE7140B3EC006305B1FCFDDC7000A008414D79CDC3B201F5200EC6C4AB10F` |
-| `FigurePlay-desktop-1.4.1-win-x64.zip` | 822,894 B | `7099828FA2AAA0203D18B3E60F48C74EFFA8C2995D0BD3D66B5FCF48053B910B` |
-| `FigurePlay-1.4.1-single-win-x64.zip` | 852,002 B | `E91B3C2802CF58B779494FCFCC4D294B946C338AD5760E406A4933A66A6D034D` |
-| `wwwroot\index.html` | 44,893 B | `73F4001DBBA6E15660C835E06E14375A583809B44231D7A3141D6F9DDB0F1C5D` |
-| `wwwroot\assets\styles.css` | 40,904 B | `7A9C1B8A0BBE7AD4808C79F01584AC40149ED5086381EFD7E2E1055F87DB024D` |
+| `dist\FigurePlay.exe` | 352,768 B | `C44C9AE96A7DCDBE0363B2460D04CF4BA74FEC9565247F0432C7CE12B33DE46B` |
+| `dist-single\FigurePlay.exe` | 871,424 B | `5301FFB930E5EA9017E60585D0FE03093B7D8D7856804183AEC4F8FEFA579B05` |
+| `FigurePlay-desktop-1.4.2-win-x64.zip` | 832,152 B | `C0D9FB54485B7999AA2EBDC1ADE7E2538DA4112CEA2EC4CD86498C4A7B7FD675` |
+| `FigurePlay-1.4.2-single-win-x64.zip` | 861,214 B | `901DD188F77612C503BF0063CDE275252EDEB3E19C7DA877F48FC39476E1926E` |
+| `wwwroot\index.html` | 44,960 B | `1596D3BAB17FFD0A37917E1A4CB7F73C7A7C5E455498D5F7ED251AF343394334` |
+| `wwwroot\assets\styles.css` | 41,031 B | `7CE9D1C382A4BA4F069C6E94AD6BF97F6E20FB36A1239803A61206F6F36FA86E` |
 | `wwwroot\assets\theme.css` | 6,988 B | `D23C9F653AA27E782629406676B4D0C3980F6A7F91B7657707DC51A63F0B05FE` |
 | `wwwroot\js\app.js` | 162,221 B | `BA1049D6E5C549A46B9902A4DC69A968D0142E6EC645AF6415CB3241C02573F4` |
 | `wwwroot\js\appearance.js` | 5,109 B | `62093AE77A7A5770F0139C41A23004BC58F420384A3FE0DF6B514642C1EF3AB2` |
-| `wwwroot\js\config-profiles.js` | 18,460 B | `4C8DDD4AFEB6140D86FEBD5F8EE0B58EC70A5B23636BAA13C9C7FE6DD563B481` |
+| `wwwroot\js\config-profiles.js` | 21,576 B | `45D3F12A8671352DE3B6653EDE1951BBFFA55C443D4BE7BE009AE7171393FDBF` |
+| `wwwroot\js\desktop.js` | 9,316 B | `960C4F3A5741DF48CB3CD2A93BF32499E2502E5A2DE357DC38B8728F04F89041` |
 | `wwwroot\js\layout.js` | 18,898 B | `094EEDC49361D43C9CF16CFBB556A2914C72EC846B48353F5F8BC6F497BB5C8F` |
 | `wwwroot\js\render-svg.js` | 17,116 B | `6DBA2AE85D3B9F83AFD87BF967BECE41CB14A92655089F60EFADCD6AA21679E9` |
-| `wwwroot\js\util.js` | 17,788 B | `C53EB3B285B949C98722A839490CD36DD13860CDEE1C96566BA529024C42C8F1` |
+| `wwwroot\js\util.js` | 17,788 B | `273ACE1040431DA93812CE3E5A740E47DEBE5AEAE7874D02C0C0B485CB493B93` |
 | `wwwroot\js\export.js` | 15,133 B | `C73BCBB7C1B70CCE4613D67BEBC030FA9BBE778DE049B2971118DC1C19C1CF0D` |
-| `wwwroot\js\desktop.js` | 7,012 B | `1B26B2ECC64F220D318A546DBB8EA579BDA902A0AB49D586D11DA2E9F35C6A93` |
 | `wwwroot\js\pdf.js` | 6,260 B | `F3B2B1FBCD31C7B2167843C34872697FF9ADCD84A1DB2CA552FFE5A15578D7A3` |
 | `wwwroot\js\zip.js` | 3,940 B | `11C6D96644B1D15500F3E542A14A6D14314F97807DEC7EFA5C2A41B6DACA644F` |
 
@@ -703,6 +785,8 @@ selftest 结束显式 shutdown 后 POWERPNT 残留=0；console error 0；截图 
 | 界面主题不影响导出 | v1.3.4 外观（深色/主题色）只改 CSS 变量与 data-* 属性，不重绘图稿；selftest 已逐字节比对深色/浅色 PNG 一致，`#figure-shell` 在深色下仍为白色 |
 | 编号位置一致性（v1.4.0） | 矢量 PDF 标签按真实锚点 `label.XMm` 定位并写回文本框几何（PowerPoint WordWrap=false 会压缩文本框）；selftest 3×2 bottom-center 编号中心误差 ≤0.03mm；与预览/裁边后的位置一致 |
 | 编号垂直 WYSIWYG（v1.4.1） | app 发送预览文字 bbox（textLeftMm/textTopMm/textWmm/textHmm）；宿主水平保持锚点方案、垂直用 TextFrame2 BoundTop/BoundHeight 对齐文字 bbox 垂直中心；config1 实测垂直误差 0.072–0.154mm、水平 -0.011mm；Bound 不可用时按 0.15×字号 leading 兜底 |
+| 配置模板持久化（v1.4.2） | 配置写 `%APPDATA%\FigurePlay\configs\profiles.json`（与 WebView2 缓存解耦），保存自动备份到 `backups\`（最多 20 份）；`--selftest` 用 outDir\configs 隔离且不写真实 APPDATA；浏览器模式仍用 localStorage |
+| 配置 JSON 损坏 | 宿主返回可读错误（ok:false），不崩溃；前端回退 localStorage，旧配置不会被清空 |
 | 矢量 PDF 复杂变换回退 | `cover` / `zoom` / `offset` 等非 contain/stretch 变换返回 `UNSUPPORTED_TRANSFORM`，前端回退位图 PDF；rotation 支持 |
 | crop 无效时忽略 | crop 越界/过小会静默忽略，输出整页（不报错） |
 | 高分辨率 PNG 体积 | EMF→PNG 目标 4400px；单张 PNG 超过 8MB 时会自动缩小重试，避免桥消息/内存过大 |
@@ -749,6 +833,11 @@ selftest 结束显式 shutdown 后 POWERPNT 残留=0；console error 0；截图 
   锚点方案），Bound 不可用时按 `0.15×fontSizePt` leading 兜底；新增 `SelfTestRunner.Config1Label.cs`
   （包装 `FP.desktop.exportVectorPdf` 捕获真实 spec + 宿主 trace 最终 crop，`pdftotext -bbox` 校验
   config1 垂直/水平误差）；主流程把 lifecycle shutdown 移到所有 PowerPoint 用例之后。
+- v1.4.2：新增 `Bridge\ConfigProfileStore.cs`（%APPDATA%\FigurePlay\configs\profiles.json，
+  临时文件+File.Replace 原子写、时间戳备份最多 20、UTF-8、100 个/2MB 限制；selftest 用 outDir\configs）；
+  `BridgeProtocol` 新增 load-config-profiles/save-config-profiles 协议与构造器；MainForm 接入并回包；
+  `SelfTestRunner.ConfigPersistence.cs` 覆盖保存/回读/删除同步/清 localStorage+reload 恢复/真实 APPDATA 未写；
+  selftest 的 WebView2 使用独立 `WebView2-selftest` 用户目录（不碰用户数据）。
 - 修改 C# 后：`build.ps1` 自动编译 + 双自测 + 双 zip（双自测含 MATLAB 与多次 PowerPoint 导出，约 13–15 分钟）；
 - 只改网页端（`E:\FigurePlay`）后：`build.ps1 -SkipBuild` 快速重打包（payload 会重新生成，单文件版随之更新）；
 - 修改桥协议时同步改：`BridgeProtocol.cs` ↔ `E:\FigurePlay\js\desktop.js` ↔ 本文档第 4 节；

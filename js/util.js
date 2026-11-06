@@ -7,7 +7,7 @@
   FP.MM_PER_INCH = 25.4;
   FP.CSS_PX_PER_MM = 96 / 25.4;
   FP.PT_PER_INCH = 72;
-  FP.APP_VERSION = '1.4.1';
+  FP.APP_VERSION = '1.4.2';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const XLINK_NS = 'http://www.w3.org/1999/xlink';

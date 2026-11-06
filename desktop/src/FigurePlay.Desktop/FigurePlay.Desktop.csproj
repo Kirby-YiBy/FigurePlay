@@ -15,9 +15,9 @@
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <DebugType>embedded</DebugType>
     <Deterministic>true</Deterministic>
-    <Version>1.4.1</Version>
-    <FileVersion>1.4.1.0</FileVersion>
-    <AssemblyVersion>1.4.1.0</AssemblyVersion>
+    <Version>1.4.2</Version>
+    <FileVersion>1.4.2.0</FileVersion>
+    <AssemblyVersion>1.4.2.0</AssemblyVersion>
     <AssemblyTitle>FigurePlay 桌面版</AssemblyTitle>
     <Product>FigurePlay</Product>
     <Description>FigurePlay 论文子图排版桌面版（WebView2 外壳 + 原生剪贴板桥）</Description>

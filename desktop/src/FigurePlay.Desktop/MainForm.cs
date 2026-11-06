@@ -41,6 +41,7 @@ namespace FigurePlay.Desktop
         private readonly WebView2 _webView;
         private readonly string _wwwroot;
         private readonly string _userDataFolder;
+        private readonly ConfigProfileStore _configProfileStore;
         private readonly List<ConsoleErrorRecord> _consoleErrors = new List<ConsoleErrorRecord>();
         private readonly List<string> _hostErrors = new List<string>();
         private readonly TaskCompletionSource<bool> _navigationTcs =
@@ -58,6 +59,7 @@ namespace FigurePlay.Desktop
             _options = options ?? throw new ArgumentNullException("options");
             _wwwroot = AppPaths.WwwRoot;
             _userDataFolder = options.SelfTest ? AppPaths.SelfTestUserDataFolder : AppPaths.UserDataFolder;
+            _configProfileStore = new ConfigProfileStore(options.SelfTest, options.OutDir);
 
             SuspendLayout();
             Text = Program.WindowTitle;
@@ -348,6 +350,50 @@ namespace FigurePlay.Desktop
                         result.RasterPanels,
                         result.Diagnostics)
                     : BridgeProtocol.BuildVectorPdfError(requestId, result.Error);
+                PostJsonToJs(json);
+            }
+            else if (string.Equals(type, BridgeProtocol.TypeLoadConfigProfiles, StringComparison.Ordinal))
+            {
+                string requestId = message.Value<string>("requestId") ?? string.Empty;
+                JArray profiles;
+                bool exists;
+                string error;
+                bool ok = _configProfileStore.Load(out profiles, out exists, out error);
+                string json = ok
+                    ? BridgeProtocol.BuildConfigProfilesSuccess(
+                        requestId,
+                        profiles,
+                        _configProfileStore.ProfilesPath,
+                        exists)
+                    : BridgeProtocol.BuildConfigProfilesError(requestId, error);
+                PostJsonToJs(json);
+            }
+            else if (string.Equals(type, BridgeProtocol.TypeSaveConfigProfiles, StringComparison.Ordinal))
+            {
+                string requestId = message.Value<string>("requestId") ?? string.Empty;
+                string backupPath;
+                int bytes;
+                string error;
+                bool ok;
+                try
+                {
+                    ok = _configProfileStore.Save(message["profiles"], out backupPath, out bytes, out error);
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    backupPath = null;
+                    bytes = 0;
+                    error = "保存本机配置异常：" + ex.Message;
+                }
+
+                string json = ok
+                    ? BridgeProtocol.BuildConfigProfilesSavedSuccess(
+                        requestId,
+                        _configProfileStore.ProfilesPath,
+                        backupPath,
+                        bytes)
+                    : BridgeProtocol.BuildConfigProfilesSavedError(requestId, error);
                 PostJsonToJs(json);
             }
             else if (string.Equals(type, "app-ready", StringComparison.Ordinal))

@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.4.1-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.4.1-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.4.2-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.4.2-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -227,6 +227,17 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
         $lbl = $report.vectorPdf.labelCenter
         Write-Info ("编号中心      : ok={0} (a)={1}mm/err={2}mm (b)={3}mm/err={4}mm 容差={5}mm" -f $lbl.ok, $lbl.checks.centerAMm, $lbl.checks.centerAErrorMm, $lbl.checks.centerBMm, $lbl.checks.centerBErrorMm, $lbl.checks.toleranceMm)
     }
+    if ($report.configPersistence) {
+        $cp = $report.configPersistence
+        if ($cp.available) {
+            $cc = $cp.checks
+            Write-Info ("配置持久化    : ok={0} path={1} 备份={2} 文件配置数={3} reload恢复={4} 真实APPDATA未写={5}" -f $cp.ok, $cp.profilesPath, $cc.backupFirst, $cc.fileProfileCount, $cc.reloadRecovered, $cc.realAppDataUntouched)
+        }
+        else {
+            Write-Info '配置持久化    : skipped'
+        }
+    }
+
     if ($report.config1Label) {
         $cfg = $report.config1Label
         if ($cfg.available) {

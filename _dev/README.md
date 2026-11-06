@@ -39,10 +39,12 @@ $py='C:\Users\DragonDance\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pyt
 #    v1.3.1 → 同 P–U，S/U 改为按实际墨迹（ink）裁剪 PDF 白边；v1.3.2 → +V 负间距，S 增加编号防裁安全边距；
 #    v1.3.3 → V 增加交互 overlay 顶层描边（负间距重叠下选中/悬停不被遮挡）；
 #    v1.3.4 → +W 界面外观（浅/深/跟随系统 + 7 主题色，导出隔离）；v1.4.0 → +X 配置模板（保存/应用/JSON 导入导出）；
-#    v1.4.1 → +Y 矢量 PDF label spec 预览 bbox（textLeftMm/textTopMm/textWmm/textHmm）
+#    v1.4.1 → +Y 矢量 PDF label spec 预览 bbox（textLeftMm/textTopMm/textWmm/textHmm）；
+#    v1.4.2 → +Z 配置模板宿主外部文件持久化（desktop load/saveConfigProfiles、迁移、路径提示）
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --list
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=v13 --only=Y     # 单场景（A..Y）
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v141 # v1.4.1 正式：report-v1.4.1.md / screens-v1.4.1 / artifacts/e2e-v141/<run>
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=v13 --only=Z     # 单场景（A..Z）
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v142 # v1.4.2 正式：report-v1.4.2.md / screens-v1.4.2 / artifacts/e2e-v142/<run>
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v141 # v1.4.1 历史产物：report-v1.4.1.md / screens-v1.4.1 / artifacts/e2e-v141
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v140 # v1.4.0 历史产物：report-v1.4.0.md / screens-v1.4.0 / artifacts/e2e-v140
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v134 # v1.3.4 历史产物：report-v1.3.4.md / screens-v1.3.4 / artifacts/e2e-v134
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v133 # v1.3.3 历史产物：report-v1.3.3.md / screens-v1.3.3 / artifacts/e2e-v133
@@ -65,7 +67,7 @@ _dev/
   lib/app.mjs                  # 应用契约 helper：__FIGPLAY__ API、预览 DOM、编号期望、自动保存、拖放；
                                #   v1.1：合并/模板/多选/批量编号/粘贴弹窗/桌面桥；v1.2：多页/撤销重做/分组/多页导出/.fig；
                                #   v1.3：网格上限/保存位置 fake picker/autoPad/PDF 裁剪/数字输入/EMF 矢量 PDF；v1.3.1：getInkCropBox；
-                               #   v1.3.2：编号防裁安全边距/负间距；v1.3.3：交互 overlay 顶层描边；v1.3.4：界面外观；v1.4.0：配置模板；v1.4.1：label bbox
+                               #   v1.3.2：编号防裁安全边距/负间距；v1.3.3：交互 overlay 顶层描边；v1.3.4：界面外观；v1.4.0：配置模板；v1.4.1：label bbox；v1.4.2：配置宿主持久化
   lib/verify.mjs               # 调用 Python 校验器（PNG/JPG/SVG/PDF/ZIP；SVG clip/像素探针/pdfinfo 页数/PDF 墨迹四边余量）
   scenarios.mjs                # v1.0 场景 A–F
   scenarios-v11.mjs            # v1.1 场景 G–L
@@ -80,7 +82,8 @@ _dev/
   contract-notes-v1.3.4.md     # v1.3.4 界面外观契约、冻结哈希与实测记录
   contract-notes-v1.4.0.md     # v1.4.0 配置模板契约、冻结哈希与实测记录
   contract-notes-v1.4.1.md     # v1.4.1 label spec bbox 契约、冻结哈希与实测记录
-  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|all，--only，--final/--final-v11/v12/v13/v131/v132/v133/v134/v140/v141
+  contract-notes-v1.4.2.md     # v1.4.2 配置宿主外部文件持久化契约、冻结哈希与实测记录
+  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|all，--only，--final/--final-v11/v12/v13/v131/v132/v133/v134/v140/v141/v142
   report.md / shots/           # v1.0 正式报告与截图
   report-v1.1.md / shots-v1.1/ # v1.1 正式报告与截图
   report-v1.2.md / screens-v1.2/  # v1.2 正式报告与 17 张关键截图（--final-v12）
@@ -91,6 +94,7 @@ _dev/
   report-v1.3.4.md / screens-v1.3.4/  # v1.3.4 界面外观正式报告与 26 张关键截图（--final-v134）
   report-v1.4.0.md / screens-v1.4.0/  # v1.4.0 配置模板正式报告与 27 张关键截图（--final-v140）
   report-v1.4.1.md / screens-v1.4.1/  # v1.4.1 label bbox 正式报告与 28 张关键截图（--final-v141）
+  report-v1.4.2.md / screens-v1.4.2/  # v1.4.2 配置宿主持久化正式报告与 29 张关键截图（--final-v142）
   smoke/upload-test.html       # file:// 能力验证页（window.smoke.*）
   smoke/run-smoke.mjs          # smoke 运行器 → artifacts/smoke-report.json
   tools/gen-samples.py         # 示例图片生成（samples/manifest.json 含尺寸/主色/缩略图/sha256）
@@ -113,6 +117,7 @@ _dev/
     e2e-v134/<run>/            # v1.3.4 最终 run：results.json + exports/（29 个关键导出，空间受控）
     e2e-v140/<run>/            # v1.4.0 最终 run：results.json + exports/（21 个关键导出，空间受控）
     e2e-v141/<run>/            # v1.4.1 最终 run：results.json + exports/（21 个关键导出，空间受控）
+    e2e-v142/<run>/            # v1.4.2 最终 run：results.json + exports/（配置宿主持久化证据，空间受控）
 ```
 
 ## E2E 场景 A–F（应用 FigurePlay v1.0.0 已通过）
@@ -266,6 +271,19 @@ v1.4.0 的 865 断言保留 + Y 新增 29 条 label bbox 断言。产物整包 1
 | 场景 | v1.4.1 覆盖点 |
 | --- | --- |
 | Y 矢量标签bbox | 配置1（2×3/170mm/4:3/colGap-4/rowGap1/autoPad，label bc/inset1.5/offsetX1/offsetY4/Times9）下 stub `FP.desktop.exportVectorPdf` 捕获 spec：labels 含 `textLeftMm/textTopMm/textWmm/textHmm`，6 项与预览 `.label-text getBBox` 偏差 0.000mm（≤0.05mm）；`(c)` top=43.507mm（≈43.58）、h=3.478mm（≈3.44）；导出前 document.fonts.ready=loaded 且 stub 记录字体状态 loaded；两次导出 spec 完全一致（无字体 fallback 抖动） |
+
+## E2E v1.4.2 配置模板宿主外部文件持久化（应用 v1.4.2 已通过）
+
+命令：`& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v142`（v1.0 回归 + v1.1 + v1.2 + v1.3 + 外观 + 配置模板 + label bbox + 宿主持久化全量，正式产物
+`_dev/report-v1.4.2.md`、`_dev/screens-v1.4.2/`、`_dev/artifacts/e2e-v142/<run>/`）。
+
+最终状态（2026-11-06，run `2026-11-06_13-51-37-999`）：**26/26 场景 PASS，923/923 断言 PASS，0 失败项**；
+v1.4.1 的 894 断言保留 + Z 新增 29 条宿主持久化断言。产物整包 18.24MB（<20MB 预算），截图 29 张。
+应用源冻结哈希（13 个文件完整 sha256）程序核对 ALL MATCH，见 [`contract-notes-v1.4.2.md`](contract-notes-v1.4.2.md)。
+
+| 场景 | v1.4.2 覆盖点 |
+| --- | --- |
+| Z 配置宿主持久化 | 桌面 mock `FP.desktop.available=true`，配置 init 发 `load-config-profiles`；宿主无文件 + localStorage 有旧配置 → 调用 `saveConfigProfiles` 迁移（不清空本地）；`#config-storage-hint` 显示宿主 `%APPDATA%\FigurePlay\configs\profiles.json`；保存/删除/导入均触发 host save；清空 localStorage 后 reload 从 host 恢复并回写本地缓存；浏览器模式仍仅 localStorage 且提示不同；配置保存不改主题/历史、项目自动保存 payload 不含配置/宿主路径 |
 
 ## smoke 已验证结论（Chrome 156 headless，file:// 无任何放宽启动参数）
 

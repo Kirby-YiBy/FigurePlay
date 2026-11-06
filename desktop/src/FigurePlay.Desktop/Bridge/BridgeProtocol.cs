@@ -10,11 +10,11 @@ namespace FigurePlay.Desktop.Bridge
     ///   JS→Host : {"type":"read-clipboard-image","requestId":"&lt;id&gt;"}
     ///   Host→JS : {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":true,"dataUrl":"data:image/png;base64,...","width":W,"height":H,"sourceFormat":"EMF|Metafile|Bitmap|DIB"}
     ///             失败时 {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":false,"error":"中文原因"}
-    ///   启动后 Host 可发 {"type":"host-ready","version":"1.4.1"}
+    ///   启动后 Host 可发 {"type":"host-ready","version":"1.4.2"}
     /// </summary>
     internal static class BridgeProtocol
     {
-        public const string HostVersion = "1.4.1";
+        public const string HostVersion = "1.4.2";
 
         public const string TypeReadClipboardImage = "read-clipboard-image";
         public const string TypeClipboardImage = "clipboard-image";
@@ -23,6 +23,10 @@ namespace FigurePlay.Desktop.Bridge
         public const string TypeFigImported = "fig-imported";
         public const string TypeExportVectorPdf = "export-vector-pdf";
         public const string TypeVectorPdfExport = "vector-pdf-export";
+        public const string TypeLoadConfigProfiles = "load-config-profiles";
+        public const string TypeConfigProfiles = "config-profiles";
+        public const string TypeSaveConfigProfiles = "save-config-profiles";
+        public const string TypeConfigProfilesSaved = "config-profiles-saved";
 
         /// <summary>
         /// 解析 WebView2 的 WebMessageAsJson。JS 端既可能发送字符串化的 JSON
@@ -193,5 +197,68 @@ namespace FigurePlay.Desktop.Bridge
             };
             return payload.ToString(Formatting.None);
         }
+
+        // ---------------------------------------------------------------- v1.4.2 配置模板持久化
+
+        public static string BuildConfigProfilesSuccess(
+            string requestId,
+            JArray profiles,
+            string path,
+            bool exists)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeConfigProfiles,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = true,
+                ["profiles"] = profiles == null ? new JArray() : profiles.DeepClone(),
+                ["path"] = path ?? string.Empty,
+                ["exists"] = exists,
+            };
+            return payload.ToString(Formatting.None);
+        }
+
+        public static string BuildConfigProfilesError(string requestId, string error)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeConfigProfiles,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = false,
+                ["error"] = string.IsNullOrEmpty(error) ? "读取本机配置失败。" : error,
+            };
+            return payload.ToString(Formatting.None);
+        }
+
+        public static string BuildConfigProfilesSavedSuccess(
+            string requestId,
+            string path,
+            string backupPath,
+            int bytes)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeConfigProfilesSaved,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = true,
+                ["path"] = path ?? string.Empty,
+                ["backupPath"] = backupPath ?? string.Empty,
+                ["bytes"] = bytes,
+            };
+            return payload.ToString(Formatting.None);
+        }
+
+        public static string BuildConfigProfilesSavedError(string requestId, string error)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeConfigProfilesSaved,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = false,
+                ["error"] = string.IsNullOrEmpty(error) ? "写入本机配置失败。" : error,
+            };
+            return payload.ToString(Formatting.None);
+        }
+
     }
 }
