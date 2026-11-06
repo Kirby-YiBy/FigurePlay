@@ -263,8 +263,8 @@ PDF 是位图封装，编号已光栅化；需要可编辑文字请导出 SVG。
 
 常用命令：
 
-```bash
-cd /d E:\FigurePlay
+```powershell
+Set-Location E:\FigurePlay
 git status
 git log --oneline --decorate -10
 git diff
