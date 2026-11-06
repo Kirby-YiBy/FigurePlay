@@ -208,6 +208,62 @@ namespace FigurePlay.Desktop.SelfTest
                                                       Path.GetFullPath(backups[0]), StringComparison.OrdinalIgnoreCase) ||
                                                   backupResponseExists;
 
+                // v1.5.0：配置备份列表 / 读取 API + 防路径穿越
+                bool listBackupsOk = false;
+                bool readBackupOk = false;
+                bool traversalBlocked = false;
+                int backupApiCount = 0;
+                string firstBackupName = string.Empty;
+                try
+                {
+                    JObject listResponse = await SendRawHostRequestAsync(
+                        new JObject { ["type"] = BridgeProtocol.TypeListConfigBackups },
+                        BridgeProtocol.TypeConfigBackups,
+                        30);
+                    JArray backupList = listResponse["backups"] as JArray;
+                    listBackupsOk = listResponse.Value<bool>("ok") && backupList != null && backupList.Count >= 1;
+                    backupApiCount = backupList == null ? 0 : backupList.Count;
+                    if (listBackupsOk)
+                    {
+                        firstBackupName = (backupList[0] as JObject)?.Value<string>("name") ?? string.Empty;
+                        if (!string.IsNullOrEmpty(firstBackupName))
+                        {
+                            JObject readResponse = await SendRawHostRequestAsync(
+                                new JObject
+                                {
+                                    ["type"] = BridgeProtocol.TypeReadConfigBackup,
+                                    ["name"] = firstBackupName,
+                                },
+                                BridgeProtocol.TypeConfigBackup,
+                                30);
+                            JArray backupProfiles = readResponse["profiles"] as JArray;
+                            readBackupOk = readResponse.Value<bool>("ok") &&
+                                           backupProfiles != null && backupProfiles.Count >= 1 &&
+                                           File.Exists(readResponse.Value<string>("path") ?? string.Empty);
+                        }
+                    }
+
+                    JObject traversalResponse = await SendRawHostRequestAsync(
+                        new JObject
+                        {
+                            ["type"] = BridgeProtocol.TypeReadConfigBackup,
+                            ["name"] = "../profiles.json",
+                        },
+                        BridgeProtocol.TypeConfigBackup,
+                        30);
+                    traversalBlocked = !traversalResponse.Value<bool>("ok");
+                }
+                catch (Exception backupApiException)
+                {
+                    checks["backupApiError"] = Shorten(backupApiException.Message, 300);
+                }
+
+                checks["listBackupsOk"] = listBackupsOk;
+                checks["readBackupOk"] = readBackupOk;
+                checks["traversalBlocked"] = traversalBlocked;
+                checks["backupApiCount"] = backupApiCount;
+                checks["firstBackupName"] = firstBackupName;
+
                 // 模拟升级/重启：清 WebView2 selftest localStorage 后 reload，再从宿主文件恢复
                 await _form.EvalStringAsync("location.reload()");
                 bool reloaded = await WaitForAppReadyAfterReloadAsync(TimeSpan.FromSeconds(60));
@@ -277,7 +333,8 @@ namespace FigurePlay.Desktop.SelfTest
                           save1Ok && save2Ok && load1Ok && load2Ok &&
                           count1 == 2 && count2 == 1 &&
                           fileExists && fileLoadOk && fileProfileCount == 1 &&
-                          backupExists && recovered && hintOk && realUntouched;
+                          backupExists && recovered && hintOk && realUntouched &&
+                          listBackupsOk && readBackupOk && traversalBlocked;
                 result["ok"] = ok;
                 if (!ok)
                 {
@@ -305,6 +362,16 @@ namespace FigurePlay.Desktop.SelfTest
                     if (!realUntouched)
                     {
                         problems.Add("真实 APPDATA 被测试写入");
+                    }
+
+                    if (!listBackupsOk || !readBackupOk)
+                    {
+                        problems.Add("配置备份 list/read API 失败");
+                    }
+
+                    if (!traversalBlocked)
+                    {
+                        problems.Add("配置备份路径穿越未被阻止");
                     }
 
                     result["error"] = string.Join("；", problems.ToArray());

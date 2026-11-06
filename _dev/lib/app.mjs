@@ -2998,6 +2998,274 @@ export async function ensureV141(ctx, page, label = 'v1.4.1 契约') {
   return probe.hasExportVectorPdfBase64 && probe.hasFonts;
 }
 
+/* ==========================================================================
+ * v1.5.0 新增：工程文件 / 配置备份 / 期刊库 / 图片预检 / 更新 UI / 全页矢量
+ * ========================================================================== */
+
+export const V150_METHODS = ['getProjectSnapshot', 'loadProjectSnapshot'];
+
+export async function probeV150(page) {
+  return page.evaluate(() => {
+    const api = window.__FIGPLAY__;
+    const ids = [
+      'project-file-card', 'project-file-meta', 'project-file-status',
+      'btn-project-save', 'btn-project-open', 'project-file-input',
+      'journal-dialog', 'journal-list', 'btn-journal-presets', 'journal-dialog-close',
+      'update-box', 'update-status', 'btn-check-update', 'btn-download-update',
+      'config-restore-backup', 'vector-pdf-toggle', 'export-note',
+    ];
+    const d = window.FP && window.FP.desktop;
+    return {
+      version: api ? api.version || null : null,
+      apiPresent: !!api,
+      missingMethods: ['getProjectSnapshot', 'loadProjectSnapshot']
+        .filter((name) => !api || typeof api[name] !== 'function'),
+      globals: {
+        projectFiles: !!window.__PROJECT_FILES__,
+        journal: !!window.__JOURNAL_PRESETS__,
+        preflight: !!window.__PREFLIGHT__,
+        updates: !!window.__UPDATES__,
+      },
+      desktop: {
+        available: !!(d && d.available),
+        exportVectorPdfMulti: !!(d && typeof d.exportVectorPdfMulti === 'function'),
+        listConfigBackups: !!(d && typeof d.listConfigBackups === 'function'),
+        readConfigBackup: !!(d && typeof d.readConfigBackup === 'function'),
+        checkUpdate: !!(d && typeof d.checkUpdate === 'function'),
+        downloadUpdate: !!(d && typeof d.downloadUpdate === 'function'),
+      },
+      missingIds: ids.filter((id) => !document.getElementById(id)),
+      projectMeta: ((document.getElementById('project-file-meta') || {}).textContent || '').trim(),
+      journalCards: document.querySelectorAll('#journal-list .journal-card').length,
+    };
+  });
+}
+
+export async function ensureV150(ctx, page, label = 'v1.5.0 契约') {
+  const probe = await probeV150(page);
+  ctx.evidence.v150Probe = probe;
+  ctx.check(`${label}：应用版本 >= 1.5.0（当前 ${probe.version || 'unknown'}）`,
+    /^1\.(?:[5-9]\.|[1-9]\d\.)|^[2-9]\./.test(String(probe.version || '')), probe.version);
+  ctx.check(`${label}：工程文件 API 齐全（getProjectSnapshot/loadProjectSnapshot）`,
+    probe.missingMethods.length === 0, probe.missingMethods);
+  ctx.check(`${label}：工程/期刊/预检/更新模块运行时齐全`,
+    probe.globals.projectFiles && probe.globals.journal
+      && probe.globals.preflight && probe.globals.updates, probe.globals);
+  ctx.check(`${label}：新增 UI（工程卡/期刊库/更新/备份/矢量）DOM 齐全`,
+    probe.missingIds.length === 0, probe.missingIds);
+  ctx.note('v1.5.0 新功能契约探测（信息，非问题）', JSON.stringify(probe));
+  return probe.missingMethods.length === 0 && probe.globals.projectFiles
+    && probe.globals.journal && probe.globals.preflight && probe.globals.updates
+    && probe.missingIds.length === 0;
+}
+
+export async function getProjectSnapshot(page) {
+  return page.evaluate(() => window.__FIGPLAY__.getProjectSnapshot());
+}
+
+export async function getProjectFileUiState(page) {
+  return page.evaluate(() => {
+    const api = window.__FIGPLAY__;
+    const text = (id) => {
+      const node = document.getElementById(id);
+      return node ? (node.textContent || '').trim() : null;
+    };
+    const info = api.getPreviewInfo();
+    const state = api.getState();
+    let snapshot = null;
+    try { snapshot = api.getProjectSnapshot(); } catch (err) { snapshot = null; }
+    const pages = snapshot && snapshot.project ? snapshot.project.pages : [];
+    return {
+      meta: text('project-file-meta'),
+      status: text('project-file-status'),
+      fileInputPresent: !!document.getElementById('project-file-input'),
+      saveBtnPresent: !!document.getElementById('btn-project-save'),
+      openBtnPresent: !!document.getElementById('btn-project-open'),
+      preview: { pageCount: info.pageCount, pageIndex: info.pageIndex, imageCount: info.imageCount },
+      state: { pages: state.pages, pageIndex: state.pageIndex },
+      snapshot: snapshot ? {
+        type: snapshot.type,
+        schemaVersion: snapshot.schemaVersion,
+        appVersion: snapshot.appVersion,
+        savedAt: snapshot.savedAt,
+        pages: pages.length,
+        images: pages.reduce((n, page) => n + (page.cells || []).filter(Boolean).length, 0),
+        groups: pages.reduce((n, page) => n + ((page.groups || []).length), 0),
+        pageSizes: pages.map((page) => ({ rows: page.layout.rows, cols: page.layout.cols, widthMm: page.layout.widthMm })),
+      } : null,
+    };
+  });
+}
+
+/** 在浏览器页内用 canvas 生成纯色 PNG 文件（用于低分辨率/拉伸预检） */
+export async function createSolidPngFile(page, dir, name, width, height, color = '#4a7c9e') {
+  await ensureDir(dir);
+  const dataUrl = await page.evaluate(({ w, h, fill }) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = fill;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, Math.max(1, Math.floor(w / 6)), Math.max(1, Math.floor(h / 6)));
+    return canvas.toDataURL('image/png');
+  }, { w: width, h: height, fill: color });
+  const filePath = path.join(dir, name);
+  await fsp.writeFile(filePath, Buffer.from(String(dataUrl).split(',')[1] || '', 'base64'));
+  return { path: filePath, dataUrl, width, height };
+}
+
+/* ---------------- 期刊配置库 ---------------- */
+
+export async function openJournalDialog(page) {
+  await page.locator('#btn-journal-presets').click();
+  await waitFor(page, () => {
+    const dialog = document.getElementById('journal-dialog');
+    return !!dialog && dialog.open === true;
+  }, null, { timeout: 6000, label: 'journal dialog open' });
+}
+
+export async function closeJournalDialog(page) {
+  await page.locator('#journal-dialog-close').click();
+  await waitFor(page, () => {
+    const dialog = document.getElementById('journal-dialog');
+    return !!dialog && dialog.open === false;
+  }, null, { timeout: 6000, label: 'journal dialog close' });
+}
+
+export async function getJournalUiState(page) {
+  return page.evaluate(() => {
+    const dialog = document.getElementById('journal-dialog');
+    const api = window.__FIGPLAY__;
+    let presets = [];
+    try {
+      const runtime = window.__JOURNAL_PRESETS__;
+      presets = runtime
+        ? (Array.isArray(runtime.list) ? runtime.list
+          : (typeof runtime.list === 'function' ? runtime.list() : []))
+        : [];
+    } catch (err) { presets = []; }
+    return {
+      open: !!dialog && dialog.open === true,
+      cards: Array.from(document.querySelectorAll('#journal-list .journal-card')).map((card) => ({
+        name: (card.querySelector('b') || {}).textContent || '',
+        size: (card.querySelector('.journal-size') || {}).textContent || '',
+        desc: (card.querySelector('p') || {}).textContent || '',
+        button: (card.querySelector('button') || {}).textContent || '',
+      })),
+      groups: Array.from(document.querySelectorAll('#journal-list .journal-group-title')).map((node) => (node.textContent || '').trim()),
+      note: ((document.querySelector('#journal-dialog .journal-note') || {}).textContent || '').trim(),
+      presets: presets.map((preset) => ({
+        id: preset.id, group: preset.group, name: preset.name, widthMm: preset.widthMm,
+        aspectW: preset.aspectW, aspectH: preset.aspectH,
+        colGap: preset.colGap, rowGap: preset.rowGap,
+        label: preset.label, exportOpts: preset.exportOpts,
+      })),
+      state: api ? {
+        layout: api.getState().layout,
+        label: api.getState().label,
+        export: api.getState().export,
+        imageCount: api.getPreviewInfo().imageCount,
+      } : null,
+    };
+  });
+}
+
+export async function clickJournalPreset(page, name) {
+  const card = page.locator('#journal-list .journal-card').filter({ hasText: name }).first();
+  await card.locator('button', { hasText: '套用' }).click();
+  await waitFor(page, () => {
+    const dialog = document.getElementById('journal-dialog');
+    return !!dialog && dialog.open === false;
+  }, null, { timeout: 6000, label: `journal apply ${name}` });
+}
+
+/* ---------------- 图片预检 ---------------- */
+
+export async function runPreflight(page, indices) {
+  return page.evaluate((list) => window.__PREFLIGHT__.run(list), indices || null);
+}
+export async function getPreflightState(page) {
+  return page.evaluate(() => ({
+    last: window.__PREFLIGHT__.last(),
+    toast: (document.getElementById('toast') || {}).textContent || '',
+  }));
+}
+export async function setCellFitUi(page, index, fit) {
+  await selectCell(page, index);
+  await setSelect(page, '#cell-fit', fit);
+  await waitFor(page, ([i, f]) => {
+    const state = window.__FIGPLAY__.getState();
+    return state.cells[i] && state.cells[i].fit === f;
+  }, [index, fit], { timeout: 5000, label: `cell ${index} fit ${fit}` });
+}
+
+/* ---------------- 更新 UI mock ---------------- */
+
+/**
+ * 在页面加载前注入更新 mock：轮询等待 FP.desktop 后挂 checkUpdate/downloadUpdate。
+ * info: { latestVersion, currentVersion, notes, configured, hasUpdate }
+ */
+export async function installUpdateMock(page, info = {}) {
+  await page.addInitScript((payload) => {
+    window.__updateMock = { checkCalls: 0, downloadCalls: 0, payload };
+    const timer = setInterval(() => {
+      if (!(window.FP && window.FP.desktop)) return;
+      const d = window.FP.desktop;
+      if (typeof d.checkUpdate !== 'function' || !d.__e2eMock) {
+        d.checkUpdate = async function () {
+          window.__updateMock.checkCalls += 1;
+          return {
+            ok: true, configured: true, hasUpdate: true,
+            latestVersion: payload.latestVersion || '1.5.1',
+            currentVersion: payload.currentVersion || '1.5.0',
+            notes: payload.notes || 'E2E 更新说明',
+          };
+        };
+        d.downloadUpdate = async function () {
+          window.__updateMock.downloadCalls += 1;
+          return { ok: true, message: '更新已下载并通过 SHA256 校验，准备安装' };
+        };
+        d.__e2eMock = true;
+        clearInterval(timer);
+      }
+    }, 5);
+  }, info);
+}
+
+export async function getUpdateMock(page) {
+  return page.evaluate(() => (window.__updateMock ? JSON.parse(JSON.stringify(window.__updateMock)) : null));
+}
+
+export async function openHelpDialog(page) {
+  await page.locator('#btn-help').click();
+  await waitForDialog(page, '#help-dialog', { label: 'help dialog' });
+}
+export async function closeHelpDialog(page) {
+  await page.locator('#help-close').click();
+  await waitForDialog(page, '#help-dialog', { open: false, label: 'help dialog close' });
+}
+export async function getUpdateUiState(page) {
+  return page.evaluate(() => {
+    const help = document.getElementById('help-dialog');
+    const text = (id) => {
+      const node = document.getElementById(id);
+      return node ? (node.textContent || '').trim() : null;
+    };
+    const btn = document.getElementById('btn-download-update');
+    return {
+      helpOpen: !!help && help.open === true,
+      status: text('update-status'),
+      checkDisabled: !!(document.getElementById('btn-check-update') || {}).disabled,
+      downloadHidden: btn ? !!btn.hidden : null,
+      downloadDisabled: btn ? !!btn.disabled : null,
+      downloadVisible: !!btn && !btn.hidden && btn.getClientRects().length > 0,
+    };
+  });
+}
+
+
 
 
 

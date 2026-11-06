@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.4.2-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.4.2-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.5.0-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.5.0-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -227,11 +227,36 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
         $lbl = $report.vectorPdf.labelCenter
         Write-Info ("编号中心      : ok={0} (a)={1}mm/err={2}mm (b)={3}mm/err={4}mm 容差={5}mm" -f $lbl.ok, $lbl.checks.centerAMm, $lbl.checks.centerAErrorMm, $lbl.checks.centerBMm, $lbl.checks.centerBErrorMm, $lbl.checks.toleranceMm)
     }
+    if ($report.updateChecks) {
+        $uc = $report.updateChecks
+        if ($uc.ok) {
+            Write-Info ("更新检查      : ok=True 无配置不联网=True HTTPS强制=True 下载未配置拒绝=True 版本比较=True SHA256校验=True 真实配置未写=True")
+        }
+        else {
+            Write-Info ("更新检查      : ok=False " + $uc.error)
+        }
+    }
+    if (Test-Path (Join-Path $PSScriptRoot 'installer\install.ps1')) {
+        Write-Info '安装/卸载脚本: installer\install.ps1 + uninstall.ps1 + README.md（无需管理员、默认保留用户数据）'
+    }
+    if ($report.closePrefs) {
+        $cpf = $report.closePrefs
+        Write-Info ("关闭提示偏好: ok={0} path={1} 记住最小化={2} 默认最小化={3} 真实APPDATA未写={4}" -f $cpf.ok, $cpf.prefsPath, $cpf.persistedMinimize, $cpf.defaultMinimize, $cpf.realPrefsUntouched)
+    }
+    if ($report.vectorPdfMulti) {
+        $cpv = $report.vectorPdfMulti
+        if ($cpv.ok) {
+            Write-Info ("多页矢量 PDF : ok=True pages=2 页面={0}x{1}pt 位图={2} 标签={3} 不一致报错={4}" -f $cpv.checks.pageWidthPt, $cpv.checks.pageHeightPt, $cpv.checks.imageCount, $cpv.checks.labelsOk, $cpv.checks.mismatchOk)
+        }
+        else {
+            Write-Info ("多页矢量 PDF : ok=False " + $cpv.error)
+        }
+    }
     if ($report.configPersistence) {
         $cp = $report.configPersistence
         if ($cp.available) {
             $cc = $cp.checks
-            Write-Info ("配置持久化    : ok={0} path={1} 备份={2} 文件配置数={3} reload恢复={4} 真实APPDATA未写={5}" -f $cp.ok, $cp.profilesPath, $cc.backupFirst, $cc.fileProfileCount, $cc.reloadRecovered, $cc.realAppDataUntouched)
+            Write-Info ("配置持久化    : ok={0} path={1} 备份={2} 文件配置数={3} reload恢复={4} 真实APPDATA未写={5} 备份API={6} 防穿越={7}" -f $cp.ok, $cp.profilesPath, $cc.backupFirst, $cc.fileProfileCount, $cc.reloadRecovered, $cc.realAppDataUntouched, ($cc.listBackupsOk -and $cc.readBackupOk), $cc.traversalBlocked)
         }
         else {
             Write-Info '配置持久化    : skipped'

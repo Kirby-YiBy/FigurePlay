@@ -40,11 +40,12 @@ $py='C:\Users\DragonDance\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pyt
 #    v1.3.3 → V 增加交互 overlay 顶层描边（负间距重叠下选中/悬停不被遮挡）；
 #    v1.3.4 → +W 界面外观（浅/深/跟随系统 + 7 主题色，导出隔离）；v1.4.0 → +X 配置模板（保存/应用/JSON 导入导出）；
 #    v1.4.1 → +Y 矢量 PDF label spec 预览 bbox（textLeftMm/textTopMm/textWmm/textHmm）；
-#    v1.4.2 → +Z 配置模板宿主外部文件持久化（desktop load/saveConfigProfiles、迁移、路径提示）
+#    v1.4.2 → +Z 配置模板宿主外部文件持久化（desktop load/saveConfigProfiles、迁移、路径提示）；
+#    v1.5.0 → +AA–AF 工程文件/配置备份恢复/期刊库/图片预检/更新 UI/全页矢量
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --list
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=v13 --only=Z     # 单场景（A..Z）
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v142 # v1.4.2 正式：report-v1.4.2.md / screens-v1.4.2 / artifacts/e2e-v142/<run>
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v141 # v1.4.1 历史产物：report-v1.4.1.md / screens-v1.4.1 / artifacts/e2e-v141
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=v15 --only=AA    # 单场景（A..AF）
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v150 # v1.5.0 正式：report-v1.5.0.md / screens-v1.5.0 / artifacts/e2e-v150/<run>
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v142 # v1.4.2 历史产物：report-v1.4.2.md / screens-v1.4.2 / artifacts/e2e-v142
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v140 # v1.4.0 历史产物：report-v1.4.0.md / screens-v1.4.0 / artifacts/e2e-v140
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v134 # v1.3.4 历史产物：report-v1.3.4.md / screens-v1.3.4 / artifacts/e2e-v134
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v133 # v1.3.3 历史产物：report-v1.3.3.md / screens-v1.3.3 / artifacts/e2e-v133
@@ -67,12 +68,13 @@ _dev/
   lib/app.mjs                  # 应用契约 helper：__FIGPLAY__ API、预览 DOM、编号期望、自动保存、拖放；
                                #   v1.1：合并/模板/多选/批量编号/粘贴弹窗/桌面桥；v1.2：多页/撤销重做/分组/多页导出/.fig；
                                #   v1.3：网格上限/保存位置 fake picker/autoPad/PDF 裁剪/数字输入/EMF 矢量 PDF；v1.3.1：getInkCropBox；
-                               #   v1.3.2：编号防裁安全边距/负间距；v1.3.3：交互 overlay 顶层描边；v1.3.4：界面外观；v1.4.0：配置模板；v1.4.1：label bbox；v1.4.2：配置宿主持久化
+                               #   v1.3.2：编号防裁安全边距/负间距；v1.3.3：交互 overlay 顶层描边；v1.3.4：界面外观；v1.4.0：配置模板；v1.4.1：label bbox；v1.4.2：配置宿主持久化；v1.5.0：工程/预检/期刊/更新/全页矢量
   lib/verify.mjs               # 调用 Python 校验器（PNG/JPG/SVG/PDF/ZIP；SVG clip/像素探针/pdfinfo 页数/PDF 墨迹四边余量）
   scenarios.mjs                # v1.0 场景 A–F
   scenarios-v11.mjs            # v1.1 场景 G–L
   scenarios-v12.mjs            # v1.2 场景 M–O（多页/撤销重做/分组/多页导出/.fig）
-  scenarios-v13.mjs            # v1.3/1.3.1/1.3.2 场景 P–V（S/U 按 ink 安全边距，V 负间距）
+  scenarios-v13.mjs            # v1.3/1.3.1/1.3.2 场景 P–Z（S/U 按 ink 安全边距，V 负间距）
+  scenarios-v15.mjs            # v1.5.0 场景 AA–AF（工程文件/配置备份/期刊库/预检/更新/全页矢量）
   contract-notes-v1.1.md       # v1.1 契约与假设记录
   contract-notes-v1.2.md       # v1.2 契约、冻结哈希、自动化假设记录
   contract-notes-v1.3.md       # v1.3 契约、冻结哈希、自动化假设记录
@@ -83,7 +85,8 @@ _dev/
   contract-notes-v1.4.0.md     # v1.4.0 配置模板契约、冻结哈希与实测记录
   contract-notes-v1.4.1.md     # v1.4.1 label spec bbox 契约、冻结哈希与实测记录
   contract-notes-v1.4.2.md     # v1.4.2 配置宿主外部文件持久化契约、冻结哈希与实测记录
-  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|all，--only，--final/--final-v11/v12/v13/v131/v132/v133/v134/v140/v141/v142
+  contract-notes-v1.5.0.md     # v1.5.0 工程文件/配置备份/期刊库/预检/更新/全页矢量契约与实测记录
+  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|v15|all，--only，--final/--final-v11/v12/v13/v131/v132/v133/v134/v140/v141/v142/v150
   report.md / shots/           # v1.0 正式报告与截图
   report-v1.1.md / shots-v1.1/ # v1.1 正式报告与截图
   report-v1.2.md / screens-v1.2/  # v1.2 正式报告与 17 张关键截图（--final-v12）
@@ -95,6 +98,7 @@ _dev/
   report-v1.4.0.md / screens-v1.4.0/  # v1.4.0 配置模板正式报告与 27 张关键截图（--final-v140）
   report-v1.4.1.md / screens-v1.4.1/  # v1.4.1 label bbox 正式报告与 28 张关键截图（--final-v141）
   report-v1.4.2.md / screens-v1.4.2/  # v1.4.2 配置宿主持久化正式报告与 29 张关键截图（--final-v142）
+  report-v1.5.0.md / screens-v1.5.0/  # v1.5.0 六项新功能正式报告与 34 张关键截图（--final-v150）
   smoke/upload-test.html       # file:// 能力验证页（window.smoke.*）
   smoke/run-smoke.mjs          # smoke 运行器 → artifacts/smoke-report.json
   tools/gen-samples.py         # 示例图片生成（samples/manifest.json 含尺寸/主色/缩略图/sha256）
@@ -118,6 +122,7 @@ _dev/
     e2e-v140/<run>/            # v1.4.0 最终 run：results.json + exports/（21 个关键导出，空间受控）
     e2e-v141/<run>/            # v1.4.1 最终 run：results.json + exports/（21 个关键导出，空间受控）
     e2e-v142/<run>/            # v1.4.2 最终 run：results.json + exports/（配置宿主持久化证据，空间受控）
+    e2e-v150/<run>/            # v1.5.0 最终 run：results.json + exports/（工程文件/全页矢量等证据，空间受控）
 ```
 
 ## E2E 场景 A–F（应用 FigurePlay v1.0.0 已通过）
@@ -284,6 +289,24 @@ v1.4.1 的 894 断言保留 + Z 新增 29 条宿主持久化断言。产物整�
 | 场景 | v1.4.2 覆盖点 |
 | --- | --- |
 | Z 配置宿主持久化 | 桌面 mock `FP.desktop.available=true`，配置 init 发 `load-config-profiles`；宿主无文件 + localStorage 有旧配置 → 调用 `saveConfigProfiles` 迁移（不清空本地）；`#config-storage-hint` 显示宿主 `%APPDATA%\FigurePlay\configs\profiles.json`；保存/删除/导入均触发 host save；清空 localStorage 后 reload 从 host 恢复并回写本地缓存；浏览器模式仍仅 localStorage 且提示不同；配置保存不改主题/历史、项目自动保存 payload 不含配置/宿主路径 |
+
+## E2E v1.5.0 工程文件/配置备份/期刊库/图片预检/更新 UI/全页矢量（应用 v1.5.0 已通过）
+
+命令：`& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v150`（v1.0–v1.5 全量，正式产物
+`_dev/report-v1.5.0.md`、`_dev/screens-v1.5.0/`、`_dev/artifacts/e2e-v150/<run>/`）。
+
+最终状态（2026-11-06，run `2026-11-06_14-33-21-004`）：**32/32 场景 PASS，1003/1003 断言 PASS，0 失败项**；
+v1.4.2 的 923 断言保留 + AA–AF 新增 80 条。产物整包 20.86MB（<25MB 预算），截图 34 张。
+应用源冻结哈希（17 个文件完整 sha256）程序核对 ALL MATCH，见 [`contract-notes-v1.5.0.md`](contract-notes-v1.5.0.md)。
+
+| 场景 | v1.5.0 覆盖点 |
+| --- | --- |
+| AA 工程文件 | `getProjectSnapshot` 含 type/schema/pages（图片 dataURL、layout/label/groups/export）；真实下载 `.figureplay-project`（118,986B）；改布局/清空后打开恢复 2 页 3 图/分组/参数；错误 type/版本/JSON 中文报错 |
+| AB 配置备份恢复 | 桌面 mock list/read 最新备份 → 恢复 2 条配置并 host save；`#config-restore-backup` 桌面可见、浏览器隐藏 |
+| AC 期刊配置库 | 11 预设/5 分组；Nature 单栏 89mm/Arial8/PDF/trim；Science 单栏 55mm/Arial7；网格/图片数量不变 |
+| AD 图片预检 | 120×90 低分辨率 warnings（<150 DPI、<500×400）；1200×900 高分辨率无警告；800×100 stretch 返回拉伸 500% 警告 |
+| AE 更新 UI | mock checkUpdate 显示新版本 1.5.1+notes、下载按钮；downloadUpdate 被调用；浏览器模式禁用 |
+| AF 全页矢量 | 2 页同尺寸 EMF 工程 stub `exportVectorPdfMulti(pages)` 捕获 2 页 spec（panels/labels）；尺寸不一致回退多页位图且提示、不再调用 multi |
 
 ## smoke 已验证结论（Chrome 156 headless，file:// 无任何放宽启动参数）
 

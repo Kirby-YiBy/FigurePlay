@@ -40,6 +40,7 @@ import { scenarios } from './scenarios.mjs';
 import { scenariosV11 } from './scenarios-v11.mjs';
 import { scenariosV12 } from './scenarios-v12.mjs';
 import { scenariosV13 } from './scenarios-v13.mjs';
+import { scenariosV15 } from './scenarios-v15.mjs';
 
 const argv = process.argv.slice(2);
 const headed = argv.includes('--headed');
@@ -55,7 +56,8 @@ const finalV134 = argv.includes('--final-v134');
 const finalV140 = argv.includes('--final-v140');
 const finalV141 = argv.includes('--final-v141');
 const finalV142 = argv.includes('--final-v142');
-const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131 || finalV132 || finalV133 || finalV134 || finalV140 || finalV141 || finalV142;
+const finalV150 = argv.includes('--final-v150');
+const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131 || finalV132 || finalV133 || finalV134 || finalV140 || finalV141 || finalV142 || finalV150;
 const suiteArg = argv.find((item) => item.startsWith('--suite='));
 const suite = suiteArg ? suiteArg.slice('--suite='.length) : 'all';
 const onlyArg = argv.find((item) => item.startsWith('--only='));
@@ -68,9 +70,10 @@ const SUITES = {
   v11: { name: 'v1.1 新功能（G–L）', scenarios: scenariosV11 },
   v12: { name: 'v1.2 新功能（M–O）', scenarios: scenariosV12 },
   v13: { name: 'v1.3 新功能（P–U）', scenarios: scenariosV13 },
+  v15: { name: 'v1.5 新功能（AA–AF）', scenarios: scenariosV15 },
   all: {
-    name: 'v1.0 回归 + v1.1 + v1.2 + v1.3 新功能（A–U）',
-    scenarios: [...scenarios, ...scenariosV11, ...scenariosV12, ...scenariosV13],
+    name: 'v1.0 回归 + v1.1 + v1.2 + v1.3 + v1.4 + v1.5 全量（A–AF）',
+    scenarios: [...scenarios, ...scenariosV11, ...scenariosV12, ...scenariosV13, ...scenariosV15],
   },
 };
 if (!SUITES[suite]) {
@@ -115,22 +118,27 @@ const baseFinalNaming = finalV134
                 reportName: 'report.md', shotsName: 'shots', exportsName: 'exports', title: '',
               }))))));
 
-const finalNaming = finalV142
+const finalNaming = finalV150
   ? {
-    reportName: 'report-v1.4.2.md', shotsName: 'screens-v1.4.2', title: '（v1.4.2）',
-    keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v142',
+    reportName: 'report-v1.5.0.md', shotsName: 'screens-v1.5.0', title: '（v1.5.0）',
+    keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v150',
   }
-  : (finalV141
+  : (finalV142
     ? {
-      reportName: 'report-v1.4.1.md', shotsName: 'screens-v1.4.1', title: '（v1.4.1）',
-      keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v141',
+      reportName: 'report-v1.4.2.md', shotsName: 'screens-v1.4.2', title: '（v1.4.2）',
+      keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v142',
     }
-    : (finalV140
+    : (finalV141
       ? {
-        reportName: 'report-v1.4.0.md', shotsName: 'screens-v1.4.0', title: '（v1.4.0）',
-        keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v140',
+        reportName: 'report-v1.4.1.md', shotsName: 'screens-v1.4.1', title: '（v1.4.1）',
+        keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v141',
       }
-      : baseFinalNaming));
+      : (finalV140
+        ? {
+          reportName: 'report-v1.4.0.md', shotsName: 'screens-v1.4.0', title: '（v1.4.0）',
+          keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v140',
+        }
+        : baseFinalNaming)));
 
 const log = (...args) => console.log(...args);
 const section = (title) => log(`\n=== ${title} ===`);
@@ -202,7 +210,7 @@ function scenarioMatches(scenario, selector) {
   const name = scenario.name.toUpperCase();
   return selector.some((item) => {
     const token = item.toUpperCase();
-    if (/^[A-Z]$/.test(token)) return code === token; // 单字母只按场景代号精确匹配
+    if (/^[A-Z]{1,2}$/.test(token)) return code === token; // 单/双字母只按场景代号精确匹配
     return code === token || name === token || name.startsWith(token);
   });
 }
@@ -276,7 +284,7 @@ async function writeFinalReport(summary, runDir, naming = {}) {
   let prunedExports = 0;
   if (keepExportsInRun) {
     // E: 盘空间有限：只保留关键导出样例（各格式主样例 + 合并/分组/多页证据）
-    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v133-|^fp-v134-|^fp-v14-|^fp-v141-|^fp-v142-)/;
+    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v133-|^fp-v134-|^fp-v14-|^fp-v141-|^fp-v142-|^fp-v15-)/;
     for (const file of walkFiles(exportsSourceDir)) {
       if (keepExportRe.test(path.basename(file))) continue;
       try {
@@ -486,6 +494,30 @@ async function writeFinalReport(summary, runDir, naming = {}) {
       const ov = neg.overlay || {};
       lines.push(`- V 负间距：gap 0→${JSON.stringify(neg.negative.gap)}，cellW ${round(neg.base.cellW, 2)}→${round(neg.negative.cellW, 2)}mm，面板重叠 X=${round(neg.negative.overlapX, 2)}mm / Y=${round(neg.negative.overlapY, 2)}mm；clamp=${JSON.stringify(neg.clamped && [neg.clamped.colGap, neg.clamped.rowGap])}；PNG/PDF/trim/SVG 导出均通过（trim 余量 ${JSON.stringify(neg.exports.trim && neg.exports.trim.margins)}）；v1.3.3 overlay 最后子层=${ov.lastChildClass || '-'}、单选/多选=${ov.singleSelection ? 1 : 0}/${ov.multiSelectionCount || 0}、hover 在顶层、导出 SVG 无交互元素`);
     }
+    if (scenario.code === 'AA' && evidence.projectFile) {
+      const pf = evidence.projectFile;
+      lines.push(`- AA 工程文件：快照 ${JSON.stringify(pf.snapshot)}；真实下载 ${pf.file.filename}（${pf.file.size}B）；改布局/清空后打开恢复 ${JSON.stringify(pf.restored)}；错误文件（${pf.errors.join('/')}）中文报错不改变工程`);
+    }
+    if (scenario.code === 'AB' && evidence.configBackup) {
+      const cb = evidence.configBackup;
+      lines.push(`- AB 配置备份：${cb.hostPath}；list/read 最新备份（${cb.backups.join('、')}）→ 恢复 ${JSON.stringify(cb.restored)} 并触发 host save；浏览器模式隐藏恢复按钮`);
+    }
+    if (scenario.code === 'AC' && evidence.journalPresets) {
+      const jp = evidence.journalPresets;
+      lines.push(`- AC 期刊库：${jp.cards} 个预设/${jp.groups.length} 分组（${jp.groups.join('、')}）；套用 Nature 单栏 ${jp.nature.widthMm}mm/${jp.nature.font}${jp.nature.size}pt/${jp.nature.format}/trim=${jp.nature.trim}，Science 单栏 ${jp.science.widthMm}mm/${jp.science.size}pt；网格与图片数量不变`);
+    }
+    if (scenario.code === 'AD' && evidence.preflight) {
+      const pf = evidence.preflight;
+      lines.push(`- AD 图片预检：低分辨率 warnings=${JSON.stringify(pf.low)}；高分辨率 dpi=${round(pf.high && pf.high.dpi, 1)} 无警告；拉伸 warnings=${JSON.stringify(pf.stretch)}`);
+    }
+    if (scenario.code === 'AE' && evidence.updateUi) {
+      const up = evidence.updateUi;
+      lines.push(`- AE 更新 UI：stub checkUpdate 显示「${up.status}」；checkCalls=${up.checkCalls}、downloadCalls=${up.downloadCalls}；浏览器模式按钮禁用`);
+    }
+    if (scenario.code === 'AF' && evidence.multiPageVector) {
+      const mv = evidence.multiPageVector;
+      lines.push(`- AF 全页矢量：stub exportVectorPdfMulti 调用 ${mv.calls} 次、pages=${mv.pages.length}（${JSON.stringify(mv.pages)}）；尺寸不一致回退：vectorDisabled=${mv.fallback.vectorDisabled}、提示含多页位图、不再调用 multi；回退 PDF=${mv.fallback.file}`);
+    }
     if (scenario.code === 'Z' && evidence.hostConfig) {
       const host = evidence.hostConfig;
       lines.push(`- Z 配置宿主持久化：${host.hostPath}；init loadConfigProfiles、旧 localStorage→host 迁移 save（${JSON.stringify(host.migration && host.migration.savedNames)}）；保存/删除/导入均触发 host save；清空 localStorage 后 host 恢复（${JSON.stringify(host.restoreAfterLocalClear)}）；浏览器模式仍 localStorage（提示：${host.browserMode && host.browserMode.hint}）；配置保存不改主题（${host.isolation && host.isolation.theme && host.isolation.theme.theme}/${host.isolation && host.isolation.theme && host.isolation.theme.accent}）、历史不变（${host.isolation && host.isolation.historyBefore}→${host.isolation && host.isolation.historyAfter}）且项目 payload 不含配置`);
@@ -531,18 +563,19 @@ async function writeFinalReport(summary, runDir, naming = {}) {
 
   lines.push('', '## 复现命令', '', '```powershell');
   lines.push(`# 完整 E2E（含报告与截图）`);
-  const finalCmd = finalV142 ? '--suite=all --final-v142'
-    : (finalV141 ? '--suite=all --final-v141'
-      : (finalV140 ? '--suite=all --final-v140'
-        : (finalV134 ? '--suite=all --final-v134'
-          : (finalV133 ? '--suite=all --final-v133'
-            : (finalV132 ? '--suite=all --final-v132'
-              : (finalV131 ? '--suite=all --final-v131'
-                : (finalV13 ? '--suite=all --final-v13'
-                  : (finalV12 ? '--suite=all --final-v12' : (finalV11 ? '--final-v11' : '--final')))))))));
+  const finalCmd = finalV150 ? '--suite=all --final-v150'
+    : (finalV142 ? '--suite=all --final-v142'
+      : (finalV141 ? '--suite=all --final-v141'
+        : (finalV140 ? '--suite=all --final-v140'
+          : (finalV134 ? '--suite=all --final-v134'
+            : (finalV133 ? '--suite=all --final-v133'
+              : (finalV132 ? '--suite=all --final-v132'
+                : (finalV131 ? '--suite=all --final-v131'
+                  : (finalV13 ? '--suite=all --final-v13'
+                    : (finalV12 ? '--suite=all --final-v12' : (finalV11 ? '--final-v11' : '--final'))))))))));
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} ${finalCmd}`);
-  lines.push(`# v1.4.2 全量（v1.0 回归 + v1.1 + v1.2 + v1.3 + 配置宿主外部文件持久化）`);
-  lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v142`);
+  lines.push(`# v1.5.0 全量（v1.0 回归 + v1.1 + v1.2 + v1.3 + 工程文件/配置备份/期刊库/预检/更新/全页矢量）`);
+  lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v150`);
   lines.push(`# 只跑某场景 / suite`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --only=U`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=v13`);
@@ -616,7 +649,7 @@ async function main() {
   log(`FigurePlay E2E run ${runId}  [suite=${suite}: ${SUITES[suite].name}]`);
   log(`应用: ${APP_INDEX}  (源码版本 ${readAppVersionFromSource()})`);
   log(`场景: ${selected.map((scenario) => scenario.code).join(', ')}  (headless=${!headed})`);
-  const finalTargetText = finalV142 || finalV141 || finalV140 || finalV134 || finalV133 || finalV132 || finalV131 || finalV13 || finalV12
+  const finalTargetText = finalV150 || finalV142 || finalV141 || finalV140 || finalV134 || finalV133 || finalV132 || finalV131 || finalV13 || finalV12
     ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / run 内关键导出`
     : (finalMode ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / artifacts/${finalNaming.exportsName}/` : '');
   log(`产物: ${runDir}${finalTargetText}\n`);

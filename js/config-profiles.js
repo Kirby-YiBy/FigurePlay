@@ -279,6 +279,10 @@
     if (focusSave && el.name && !el.name.value.trim()) {
       el.name.value = '配置 ' + (profiles.length + 1);
     }
+    if (el.restoreBackup) {
+      const store = desktopStore();
+      el.restoreBackup.hidden = !(store && typeof store.listConfigBackups === 'function' && typeof store.readConfigBackup === 'function');
+    }
     fillSaveSummary();
     renderList();
     hideImportPreview();
@@ -453,6 +457,47 @@
     applyProfile(importDraft.profile, false);
   }
 
+  async function restoreLatestBackup() {
+    const store = desktopStore();
+    if (!store || typeof store.listConfigBackups !== 'function' || typeof store.readConfigBackup !== 'function') {
+      FP.toast('当前为浏览器模式，没有本机配置备份；请用 JSON 导入', 'error', 4000);
+      return false;
+    }
+    try {
+      const res = await store.listConfigBackups();
+      if (!res || !res.ok) throw new Error((res && res.error) || '读取备份列表失败');
+      const backups = (res.backups || []).slice().sort(function (a, b) {
+        return String(b.modifiedAt || '').localeCompare(String(a.modifiedAt || '')) || String(b.name).localeCompare(String(a.name));
+      });
+      if (!backups.length) {
+        FP.toast('还没有可恢复的本机配置备份', 'info', 3500);
+        return false;
+      }
+      const latest = backups[0];
+      const when = latest.modifiedAt ? fmtDate(latest.modifiedAt) : latest.name;
+      if (!window.confirm('用本机备份「' + latest.name + '」（' + when + '）替换当前配置列表？\n当前列表会先自动保存为一份新备份。')) {
+        return false;
+      }
+      const read = await store.readConfigBackup(latest.name);
+      if (!read || !read.ok) throw new Error((read && read.error) || '读取备份失败');
+      const restored = sanitizeList(read.profiles || []);
+      if (!restored.length) throw new Error('备份中没有有效配置');
+      profiles = restored;
+      writeLocalProfiles();
+      persistProfiles();
+      updateCount();
+      renderList();
+      updateStorageHint();
+      setStatus('已从备份恢复 ' + restored.length + ' 个配置（' + latest.name + '）', false);
+      FP.toast('已恢复 ' + restored.length + ' 个配置；当前列表已另存为新备份', 'success', 4200);
+      return true;
+    } catch (e) {
+      setStatus('恢复备份失败：' + (e.message || e), true);
+      FP.toast('恢复备份失败：' + (e.message || e), 'error', 5500);
+      return false;
+    }
+  }
+
   async function init() {
     if (ready) return;
     ready = true;
@@ -481,6 +526,7 @@
     el.importApply = byId('config-import-apply');
     el.importSave = byId('config-import-save');
     el.importCancel = byId('config-import-cancel');
+    el.restoreBackup = byId('config-restore-backup');
 
     await loadProfiles();
     updateCount();
@@ -502,6 +548,11 @@
     if (el.importApply) el.importApply.addEventListener('click', applyImported);
     if (el.importSave) el.importSave.addEventListener('click', saveImported);
     if (el.importCancel) el.importCancel.addEventListener('click', hideImportPreview);
+    if (el.restoreBackup) {
+      const store = desktopStore();
+      el.restoreBackup.hidden = !(store && typeof store.listConfigBackups === 'function' && typeof store.readConfigBackup === 'function');
+      el.restoreBackup.addEventListener('click', restoreLatestBackup);
+    }
     if (el.list) {
       el.list.addEventListener('click', function (e) {
         const btn = e.target && e.target.closest ? e.target.closest('[data-action][data-id]') : null;
@@ -533,6 +584,7 @@
     importJson: importJsonText,
     exportProfile: exportProfile,
     openDialog: openDialog,
+    restoreLatestBackup: restoreLatestBackup,
     reload: async function () { await loadProfiles(); updateCount(); renderList(); },
     clear: function () { profiles = []; persistProfiles(); updateCount(); renderList(); }
   };

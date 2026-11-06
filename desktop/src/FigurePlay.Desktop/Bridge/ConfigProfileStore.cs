@@ -243,6 +243,140 @@ namespace FigurePlay.Desktop.Bridge
             }
         }
 
+        /// <summary>列出 backups 目录中的时间戳备份（新→旧）。</summary>
+        public bool ListBackups(out JArray backups, out string error)
+        {
+            backups = new JArray();
+            error = null;
+            try
+            {
+                if (!Directory.Exists(BackupDir))
+                {
+                    return true;
+                }
+
+                string[] files = Directory.GetFiles(BackupDir, "profiles-*.json");
+                Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+                Array.Reverse(files);
+                foreach (string file in files)
+                {
+                    FileInfo info = new FileInfo(file);
+                    backups.Add(new JObject
+                    {
+                        ["name"] = info.Name,
+                        ["path"] = info.FullName,
+                        ["bytes"] = info.Length,
+                        ["modifiedAt"] = info.LastWriteTimeUtc.ToString("o"),
+                    });
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "读取配置备份列表失败：" + ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>读取指定备份（只允许 backups 目录内的文件名，防路径穿越）。</summary>
+        public bool ReadBackup(string name, out JArray profiles, out string backupPath, out string error)
+        {
+            profiles = new JArray();
+            backupPath = null;
+            error = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    error = "备份文件名为空。";
+                    return false;
+                }
+
+                name = name.Trim();
+                if (name != Path.GetFileName(name) ||
+                    name.IndexOfAny(new[] { '\\', '/', ':' }) >= 0 ||
+                    name.IndexOf("..", StringComparison.Ordinal) >= 0 ||
+                    !name.StartsWith("profiles-", StringComparison.OrdinalIgnoreCase) ||
+                    !name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "备份文件名无效（只允许 backups 目录内的 profiles-*.json）。";
+                    return false;
+                }
+
+                string root = Path.GetFullPath(BackupDir);
+                if (!root.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+                {
+                    root += Path.DirectorySeparatorChar;
+                }
+
+                string fullPath = Path.GetFullPath(Path.Combine(BackupDir, name));
+                if (!fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "备份文件不在允许目录内。";
+                    return false;
+                }
+
+                if (!File.Exists(fullPath))
+                {
+                    error = "备份文件不存在：" + name;
+                    return false;
+                }
+
+                byte[] bytes = File.ReadAllBytes(fullPath);
+                if (bytes.Length > MaxBytes)
+                {
+                    error = "备份文件过大（上限 2MB）。";
+                    return false;
+                }
+
+                JToken token;
+                try
+                {
+                    token = JToken.Parse(DecodeUtf8(bytes));
+                }
+                catch (JsonException ex)
+                {
+                    error = "备份文件 JSON 损坏：" + ex.Message;
+                    return false;
+                }
+
+                JArray array = token as JArray;
+                if (array == null)
+                {
+                    JObject obj = token as JObject;
+                    if (obj != null)
+                    {
+                        array = obj["profiles"] as JArray;
+                    }
+                }
+
+                if (array == null)
+                {
+                    error = "备份文件格式无效：缺少 profiles 数组。";
+                    return false;
+                }
+
+                JArray result = new JArray();
+                foreach (JToken item in array)
+                {
+                    if (item is JObject && result.Count < MaxProfiles)
+                    {
+                        result.Add(item.DeepClone());
+                    }
+                }
+
+                profiles = result;
+                backupPath = fullPath;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "读取配置备份失败：" + ex.Message;
+                return false;
+            }
+        }
+
         private void CleanupBackups()
         {
             try

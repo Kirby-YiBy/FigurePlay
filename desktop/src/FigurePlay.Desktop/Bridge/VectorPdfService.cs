@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
@@ -29,6 +30,42 @@ namespace FigurePlay.Desktop.Bridge
             }
 
             return await Task.Run(() => PowerPointHost.Export(spec, TimeoutMs)).ConfigureAwait(false);
+        }
+
+        /// <summary>v1.5.0：多页矢量 PDF（pages 数组，一次性多页 PDF）。</summary>
+        public async Task<VectorPdfResult> ExportMultiAsync(JObject requestJson)
+        {
+            if (_disposed)
+            {
+                return VectorPdfResult.Fail("矢量 PDF 导出服务已关闭。");
+            }
+
+            JArray pages = requestJson == null ? null : requestJson["pages"] as JArray;
+            if (pages == null || pages.Count == 0)
+            {
+                return VectorPdfResult.Fail("多页矢量 PDF 参数无效：缺少 pages 数组。");
+            }
+
+            List<VectorPdfSpec> specs = new List<VectorPdfSpec>();
+            for (int i = 0; i < pages.Count; i++)
+            {
+                JObject pageJson = pages[i] as JObject;
+                if (pageJson == null)
+                {
+                    return VectorPdfResult.Fail("多页矢量 PDF 参数无效：第 " + (i + 1) + " 页 spec 不是对象。");
+                }
+
+                VectorPdfSpec spec;
+                string parseError;
+                if (!VectorPdfSpec.TryParse(pageJson, out spec, out parseError))
+                {
+                    return VectorPdfResult.Fail("第 " + (i + 1) + " 页 spec 无效：" + parseError);
+                }
+
+                specs.Add(spec);
+            }
+
+            return await Task.Run(() => PowerPointHost.ExportMulti(specs, TimeoutMs)).ConfigureAwait(false);
         }
 
         public void Dispose()

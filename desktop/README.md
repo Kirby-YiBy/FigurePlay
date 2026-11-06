@@ -23,13 +23,13 @@
    `WebView2Loader.dll`、`wwwroot`），首次启动自解压到 `%LOCALAPPDATA%\FigurePlay\bin\app-<hash>`，
    从任意目录双击即可运行，不依赖旁边 dll/assets；仍依赖系统 **WebView2 Runtime**。
 
-> 本候选包内嵌的是 **FigurePlay 应用 v1.4.2**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
+> 本候选包内嵌的是 **FigurePlay 应用 v1.5.0**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
 > ink 裁剪并入编号排版盒 + 至少 1mm 安全边距、行/列间距支持 -50～80mm、负间距下选中/悬停顶层描边、
 > 界面外观（浅色/深色/跟随系统 + 7 种主题色）、配置模板（`js/config-profiles.js`）、
 > 矢量 PDF + crop、saveAs 开关、`.fig` EMF 保留等；v1.4.1 起 spec 携带预览文字 bbox 用于编号 WYSIWYG；
-> **v1.4.2 配置模板持久化到 `%APPDATA%\FigurePlay\configs\profiles.json`（宿主原子写 + 时间戳备份），
+> **v1.5.0 配置模板持久化到 `%APPDATA%\FigurePlay\configs\profiles.json`（宿主原子写 + 时间戳备份），
 > 清除 WebView2 缓存/更新程序后仍可恢复**）；`dist\wwwroot` 与构建时 `E:\FigurePlay` 冻结源文件
-> **逐字节一致**（20 个文件），桌面版桥协议见第 4 节。
+> **逐字节一致**（24 个文件），桌面版桥协议见第 4 节。
 
 技术栈：**.NET Framework 4.8**（Windows 10/11 自带运行时，最终用户无需安装 .NET）
 \+ **Microsoft.Web.WebView2**（WinForms）。多文件版约 2.38 MB（dist 27 文件，wwwroot 20 + 7 运行文件），
@@ -87,7 +87,7 @@ desktop\
 │   ├─ WebView2Loader.dll
 │   ├─ Newtonsoft.Json.dll
 │   ├─ 使用说明.txt
-│   └─ wwwroot\                  ← 构建时复制的最新网页应用（v1.4.2：多页/分组/撤销/矢量 PDF/crop/外观主题/配置模板，20 个文件）
+│   └─ wwwroot\                  ← 构建时复制的最新网页应用（v1.5.0：多页/分组/撤销/矢量 PDF/crop/外观主题/配置模板/工程文件/预检/更新检查，24 个文件）
 ├─ dist-single\                  ← 单文件版（目录中只有 FigurePlay.exe）
 │   └─ FigurePlay.exe
 ├─ selftest\                     ← 多文件版最近一次自测输出
@@ -615,6 +615,40 @@ selftest（`configPersistence`）实测（多文件 / 单文件一致）：
 - 清空 WebView2 selftest localStorage + `location.reload()` → 宿主文件恢复配置（reloadRecovered=True，
   页面存储提示显示本机路径）；新 store 实例重新 Load 也可读（模拟重启/升级）；
 - 真实 APPDATA 路径检查：`%APPDATA%\FigurePlay\configs` 自测前后均不存在/未变化（realAppDataUntouched=True）。
+
+### 7.8 v1.5.0 桌面发布基础设施
+
+- **X 关闭提示**：`ClosePrompt.cs` 自定义 WinForms 对话框（最小化/退出程序/取消 + “记住本次选择”），
+  默认选中最小化；记住值写入 `%APPDATA%\FigurePlay\prefs.json`，下次直接执行；最小化不关闭
+  WebView2/PowerPoint；`--selftest` 不弹 UI（隔离 `<outDir>\prefs.json`）。
+- **配置备份 API**：`list-config-backups`→`config-backups`、`read-config-backup`→`config-backup`；
+  仅允许 backups 目录内 `profiles-*.json`，路径穿越被拒绝；应用侧“恢复上一份备份”按钮可用。
+- **全页矢量 PDF**：`export-vector-pdf-multi`→`vector-pdf-export-multi`；同一 PowerPoint presentation
+  多张幻灯片、一次 SaveAs 多页 PDF；每页复用单页 FillSlide（标签/trim/背景一致）；页面尺寸不一致返回中文错误。
+- **安装器/卸载器**：`desktop\installer\install.ps1` 无管理员安装到
+  `%LOCALAPPDATA%\Programs\FigurePlay`（开始菜单快捷方式，可选桌面）；`uninstall.ps1` 默认保留
+  `%APPDATA%\FigurePlay` 与 `%LOCALAPPDATA%\FigurePlay`（仅 `-RemoveUserData` + 输入 DELETE 才删）。
+- **可配置更新**：`%APPDATA%\FigurePlay\update.json`（`{enabled,manifestUrl}`，默认不存在=不联网）；
+  `check-update`→`update-info`（currentVersion/latestVersion/hasUpdate/notes/url/configured），
+  `download-update`→`update-downloaded`；强制 HTTPS + SHA256 校验，校验通过后下载到临时目录并提示手动替换
+  （不做无校验自动替换），失败清理并中文报错。
+
+v1.5.0 selftest 新增证据：`updateChecks`（无配置不联网/HTTPS 强制/版本比较/SHA256）、`closePrefs`
+（记住最小化 round-trip、真实 APPDATA 未写）、`vectorPdfMulti`（2 页、0 位图、(a)/(b) 标签、
+页面尺寸不一致报错）、`configPersistence` 扩展 list/read/防穿越。
+
+### 7.9 v1.5.0 产物
+
+| 文件 | 大小 | SHA256 |
+| --- | --- | --- |
+| `dist\FigurePlay.exe` | 398,336 B | `1ED3A8E2BA489F8C24C74B36B37DE19CF21F1D4A7871A101EFF2682C355F8277` |
+| `dist-single\FigurePlay.exe` | 901,632 B | `AE1869D7E8B3258C066CD70EDBAD94FF57E96DCE5029E230758D1CA91CFF3926` |
+| `FigurePlay-desktop-1.5.0-win-x64.zip` | 862,139 B | `97269D5C7DB59FA4CDF3F70409AB1880E2F9735CB32D7CB5952BB51890878358` |
+| `FigurePlay-1.5.0-single-win-x64.zip` | 890,997 B | `BC11C13CC725098C6E32F35AC3C230209A7D0C170F9623E53E855899E6183846` |
+
+`dist\wwwroot` 24/24 与冻结源逐字节一致；app.js 168,367B `2B200B6B…`、config-profiles 24,175B
+`10221EDD…`、desktop.js 12,078B `08D6915E…`、updates.js 4,227B `6D983310…`、util 17,788B `58227AEC…`。
+双 selftest 均 exit 0（多文件 136.6s / 单文件 180.5s），冷导出 29.1s→0.78s，POWERPNT 残留 0。
 
 ---
 

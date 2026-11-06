@@ -10,11 +10,11 @@ namespace FigurePlay.Desktop.Bridge
     ///   JS→Host : {"type":"read-clipboard-image","requestId":"&lt;id&gt;"}
     ///   Host→JS : {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":true,"dataUrl":"data:image/png;base64,...","width":W,"height":H,"sourceFormat":"EMF|Metafile|Bitmap|DIB"}
     ///             失败时 {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":false,"error":"中文原因"}
-    ///   启动后 Host 可发 {"type":"host-ready","version":"1.4.2"}
+    ///   启动后 Host 可发 {"type":"host-ready","version":"1.5.0"}
     /// </summary>
     internal static class BridgeProtocol
     {
-        public const string HostVersion = "1.4.2";
+        public const string HostVersion = "1.5.0";
 
         public const string TypeReadClipboardImage = "read-clipboard-image";
         public const string TypeClipboardImage = "clipboard-image";
@@ -27,6 +27,16 @@ namespace FigurePlay.Desktop.Bridge
         public const string TypeConfigProfiles = "config-profiles";
         public const string TypeSaveConfigProfiles = "save-config-profiles";
         public const string TypeConfigProfilesSaved = "config-profiles-saved";
+        public const string TypeExportVectorPdfMulti = "export-vector-pdf-multi";
+        public const string TypeVectorPdfExportMulti = "vector-pdf-export-multi";
+        public const string TypeListConfigBackups = "list-config-backups";
+        public const string TypeConfigBackups = "config-backups";
+        public const string TypeReadConfigBackup = "read-config-backup";
+        public const string TypeConfigBackup = "config-backup";
+        public const string TypeCheckUpdate = "check-update";
+        public const string TypeUpdateCheck = "update-info";
+        public const string TypeDownloadUpdate = "download-update";
+        public const string TypeUpdateDownload = "update-downloaded";
 
         /// <summary>
         /// 解析 WebView2 的 WebMessageAsJson。JS 端既可能发送字符串化的 JSON
@@ -256,6 +266,106 @@ namespace FigurePlay.Desktop.Bridge
                 ["requestId"] = requestId ?? string.Empty,
                 ["ok"] = false,
                 ["error"] = string.IsNullOrEmpty(error) ? "写入本机配置失败。" : error,
+            };
+            return payload.ToString(Formatting.None);
+        }
+
+
+        // ---------------------------------------------------------------- v1.5.0 多页矢量 / 配置备份
+
+        public static string BuildVectorPdfMultiSuccess(
+            string requestId,
+            string base64,
+            int bytes,
+            int pages,
+            string engine,
+            int vectorPanels,
+            int rasterPanels,
+            List<string> diagnostics = null)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeVectorPdfExportMulti,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = true,
+                ["base64"] = base64 ?? string.Empty,
+                ["bytes"] = bytes,
+                ["pages"] = pages,
+                ["engine"] = string.IsNullOrEmpty(engine) ? "PowerPoint" : engine,
+                ["vectorPanels"] = vectorPanels,
+                ["rasterPanels"] = rasterPanels,
+            };
+            if (diagnostics != null && diagnostics.Count > 0)
+            {
+                payload["diagnostics"] = new JArray(diagnostics);
+            }
+
+            return payload.ToString(Formatting.None);
+        }
+
+        public static string BuildVectorPdfMultiError(string requestId, string error)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeVectorPdfExportMulti,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = false,
+                ["error"] = string.IsNullOrEmpty(error) ? "多页矢量 PDF 导出失败。" : error,
+            };
+            return payload.ToString(Formatting.None);
+        }
+
+        public static string BuildConfigBackupsSuccess(string requestId, JArray backups, string backupDir)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeConfigBackups,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = true,
+                ["backups"] = backups == null ? new JArray() : backups.DeepClone(),
+                ["backupDir"] = backupDir ?? string.Empty,
+            };
+            return payload.ToString(Formatting.None);
+        }
+
+        public static string BuildConfigBackupsError(string requestId, string error)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeConfigBackups,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = false,
+                ["error"] = string.IsNullOrEmpty(error) ? "读取配置备份列表失败。" : error,
+            };
+            return payload.ToString(Formatting.None);
+        }
+
+        public static string BuildConfigBackupSuccess(
+            string requestId,
+            string name,
+            string path,
+            JArray profiles)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeConfigBackup,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = true,
+                ["name"] = name ?? string.Empty,
+                ["path"] = path ?? string.Empty,
+                ["profiles"] = profiles == null ? new JArray() : profiles.DeepClone(),
+            };
+            return payload.ToString(Formatting.None);
+        }
+
+        public static string BuildConfigBackupError(string requestId, string error)
+        {
+            JObject payload = new JObject
+            {
+                ["type"] = TypeConfigBackup,
+                ["requestId"] = requestId ?? string.Empty,
+                ["ok"] = false,
+                ["error"] = string.IsNullOrEmpty(error) ? "读取配置备份失败。" : error,
             };
             return payload.ToString(Formatting.None);
         }

@@ -22,6 +22,8 @@ namespace FigurePlay.Desktop.Bridge
         private sealed class WorkItem
         {
             public VectorPdfSpec Spec;
+            public List<VectorPdfSpec> MultiSpecs;
+            public bool IsMulti;
             public bool IsShutdown;
             public bool IsPrewarm;
             public VectorPdfResult Result;
@@ -99,6 +101,33 @@ namespace FigurePlay.Desktop.Bridge
                 return VectorPdfResult.Fail(
                     "矢量 PDF 导出超时（超过 " + (waitMs / 1000) + " 秒）。" +
                     "PowerPoint 可能无响应，已重置会话；请稍后重试。");
+            }
+
+            return item.Result ?? VectorPdfResult.Fail("PowerPoint 会话返回空结果。");
+        }
+
+        /// <summary>v1.5.0：多页矢量 PDF（同一 presentation 多幻灯片、一次 SaveAs）。</summary>
+        public static VectorPdfResult ExportMulti(IList<VectorPdfSpec> specs, int timeoutMs)
+        {
+            if (!IsAvailable)
+            {
+                return VectorPdfResult.Fail(
+                    "未安装 Microsoft PowerPoint，无法导出多页矢量 PDF。" +
+                    "需要桌面版 PowerPoint 2016 或更高版本。");
+            }
+
+            WorkItem item = new WorkItem { MultiSpecs = new List<VectorPdfSpec>(specs), IsMulti = true };
+            if (!Enqueue(item))
+            {
+                return VectorPdfResult.Fail("矢量 PDF 导出服务已关闭。");
+            }
+
+            int waitMs = timeoutMs <= 0 ? DefaultTimeoutMs : timeoutMs;
+            if (!item.Done.Wait(waitMs))
+            {
+                AbortAfterTimeout();
+                return VectorPdfResult.Fail(
+                    "多页矢量 PDF 导出超时（超过 " + (waitMs / 1000) + " 秒）；已重置 PowerPoint 会话。");
             }
 
             return item.Result ?? VectorPdfResult.Fail("PowerPoint 会话返回空结果。");
@@ -235,6 +264,10 @@ namespace FigurePlay.Desktop.Bridge
                         ShutdownCore();
                         item.Result = new VectorPdfResult { Ok = true };
                     }
+                    else if (item.IsMulti)
+                    {
+                        item.Result = ExportMultiCore(item.MultiSpecs);
+                    }
                     else if (item.IsPrewarm)
                     {
                         EnsureApplication();
@@ -305,6 +338,52 @@ namespace FigurePlay.Desktop.Bridge
 
                 return VectorPdfResult.Fail(
                     "PowerPoint 矢量 PDF 导出异常：" + PowerPointVectorExporter.DescribeException(ex));
+            }
+        }
+
+        private static VectorPdfResult ExportMultiCore(IList<VectorPdfSpec> specs)
+        {
+            try
+            {
+                EnsureApplication();
+                _exportIndex++;
+                VectorPdfResult result = PowerPointVectorExporter.ComposeMultiWithApplication(_app, specs);
+                if (!result.Ok && PowerPointVectorExporter.LooksLikeComDisconnected(result.Error))
+                {
+                    RecreateApplication();
+                    _exportIndex++;
+                    result = PowerPointVectorExporter.ComposeMultiWithApplication(_app, specs);
+                }
+
+                if (result.Ok)
+                {
+                    result.Diagnostics.Add(
+                        "host: session#" + _sessionIndex + " multi-export#" + _exportIndex +
+                        " instanceCreateMs=" + _instanceCreateMs +
+                        " pages=" + result.Pages);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                if (PowerPointVectorExporter.LooksLikeComDisconnected(ex))
+                {
+                    try
+                    {
+                        RecreateApplication();
+                        _exportIndex++;
+                        return PowerPointVectorExporter.ComposeMultiWithApplication(_app, specs);
+                    }
+                    catch (Exception retryException)
+                    {
+                        return VectorPdfResult.Fail(
+                            "PowerPoint 会话重建后仍失败：" + PowerPointVectorExporter.DescribeException(retryException));
+                    }
+                }
+
+                return VectorPdfResult.Fail(
+                    "多页矢量 PDF 导出异常：" + PowerPointVectorExporter.DescribeException(ex));
             }
         }
 

@@ -28,7 +28,7 @@
       document.dispatchEvent(new CustomEvent('figplay-host-ready', { detail: { version: hostVersion } }));
       return;
     }
-    if (data.type === 'vector-pdf-export' && data.requestId) {
+    if ((data.type === 'vector-pdf-export' || data.type === 'vector-pdf-export-multi') && data.requestId) {
       const entry = pending.get(data.requestId);
       if (!entry) return;
       pending.delete(data.requestId);
@@ -46,7 +46,7 @@
       }
       return;
     }
-    if ((data.type === 'config-profiles' || data.type === 'config-profiles-saved') && data.requestId) {
+    if ((data.type === 'config-profiles' || data.type === 'config-profiles-saved' || data.type === 'config-backups' || data.type === 'config-backup') && data.requestId) {
       const entry = pending.get(data.requestId);
       if (!entry) return;
       pending.delete(data.requestId);
@@ -157,6 +157,29 @@
      * @param {object} spec
      * @returns {Promise<{pdfBase64:string,bytes:number,engine:string,vectorPanels:number,rasterPanels:number}>}
      */
+    exportVectorPdfMulti: function (pages) {
+      if (!available) {
+        return Promise.reject(new Error('全页矢量 PDF 需要桌面版 FigurePlay'));
+      }
+      if (!Array.isArray(pages) || pages.length < 1) {
+        return Promise.reject(new Error('没有可导出的图页'));
+      }
+      return new Promise(function (resolve, reject) {
+        const requestId = 'vecmulti-' + (++seq) + '-' + Date.now().toString(36);
+        const timer = setTimeout(function () {
+          pending.delete(requestId);
+          reject(new Error('全页矢量 PDF 生成超时'));
+        }, 180000);
+        pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+        try {
+          webview.postMessage(JSON.stringify({ type: 'export-vector-pdf-multi', requestId: requestId, pages: pages }));
+        } catch (err) {
+          pending.delete(requestId);
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+    },
     exportVectorPdf: function (spec) {
       if (!available) {
         return Promise.reject(new Error('矢量 PDF 需要桌面版 FigurePlay'));
@@ -217,6 +240,44 @@
             type: 'save-config-profiles', requestId: requestId,
             profiles: Array.isArray(profiles) ? profiles : []
           }));
+        } catch (err) {
+          pending.delete(requestId);
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+    },
+    /** 列出宿主配置模板备份文件。 */
+    listConfigBackups: function () {
+      if (!available) return Promise.reject(new Error('当前为浏览器模式，没有本机配置备份'));
+      return new Promise(function (resolve, reject) {
+        const requestId = 'cfglist-' + (++seq) + '-' + Date.now().toString(36);
+        const timer = setTimeout(function () {
+          pending.delete(requestId);
+          reject(new Error('读取配置备份列表超时'));
+        }, 12000);
+        pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+        try {
+          webview.postMessage(JSON.stringify({ type: 'list-config-backups', requestId: requestId }));
+        } catch (err) {
+          pending.delete(requestId);
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+    },
+    /** 读取一个宿主配置模板备份。 */
+    readConfigBackup: function (name) {
+      if (!available) return Promise.reject(new Error('当前为浏览器模式，没有本机配置备份'));
+      return new Promise(function (resolve, reject) {
+        const requestId = 'cfgread-' + (++seq) + '-' + Date.now().toString(36);
+        const timer = setTimeout(function () {
+          pending.delete(requestId);
+          reject(new Error('读取配置备份超时'));
+        }, 12000);
+        pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+        try {
+          webview.postMessage(JSON.stringify({ type: 'read-config-backup', requestId: requestId, name: name }));
         } catch (err) {
           pending.delete(requestId);
           clearTimeout(timer);

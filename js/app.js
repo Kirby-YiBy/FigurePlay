@@ -1198,6 +1198,7 @@
     updatePageTabs();
     updateGroupList();
     updateUndoRedoButtons();
+    if (FP.updateProjectMeta) FP.updateProjectMeta();
     applyZoom();
     scheduleSave();
     scheduleHistory();
@@ -1367,7 +1368,7 @@
     const info = emfVectorInfo();
     return !!(FP.desktop && FP.desktop.available && typeof FP.desktop.exportVectorPdf === 'function') &&
       info.count > 0 && !info.unsupported &&
-      state.export.format === 'pdf' && state.export.scope !== 'all' && state.export.vectorPdf !== false;
+      state.export.format === 'pdf' && state.export.vectorPdf !== false;
   }
 
   function updateExportReadout() {
@@ -1494,7 +1495,9 @@
     el.exportNote.textContent = EXPORT_NOTES[format];
     const vec = emfVectorInfo();
     const allPages = state.export.scope === 'all' && project.pages.length > 1;
-    const showVector = format === 'pdf' && !allPages && !!(FP.desktop && FP.desktop.available) && vec.count > 0;
+    const showVector = format === 'pdf' && !!(FP.desktop && FP.desktop.available) &&
+      (allPages || vec.count > 0);
+    const allVectorCapable = allPages ? hasUsableAllPagesVectorPdf() : true;
     const showTrim = format === 'pdf';
     if (el.pdfTrimRow) el.pdfTrimRow.hidden = !showTrim;
     if (el.pdfTrimToggle) el.pdfTrimToggle.checked = !!state.export.trimPdf;
@@ -1502,13 +1505,19 @@
     if (el.pdfTrimSafetyHint) el.pdfTrimSafetyHint.hidden = !showTrim || !state.export.trimPdf;
     if (el.pdfTrimMargin) el.pdfTrimMargin.value = String(state.export.trimMarginMm);
     if (el.vectorPdfRow) el.vectorPdfRow.hidden = !showVector;
-    if (el.vectorPdfToggle) el.vectorPdfToggle.disabled = !showVector || vec.unsupported;
+    if (el.vectorPdfToggle) el.vectorPdfToggle.disabled = !showVector || vec.unsupported || (allPages && !allVectorCapable);
     if (showVector) {
-      el.exportNote.textContent = vec.unsupported
-        ? '当前 EMF 子图使用了裁剪/旋转/偏移，无法走矢量模式；可恢复默认的“适应”显示后再导出。'
-        : 'PDF 将优先使用矢量模式（保留 ' + vec.count + ' 张 EMF 的线条与文字），需桌面版 PowerPoint；首次启动较慢，之后会复用 PowerPoint 会话。失败会自动回退为高分辨率位图 PDF。';
+      if (allPages && !allVectorCapable) {
+        el.exportNote.textContent = '全页矢量 PDF 要求每页都有 EMF、没有裁剪/旋转/偏移且各页尺寸一致；当前将使用多页位图 PDF。';
+      } else if (allPages) {
+        el.exportNote.textContent = '全部 ' + project.pages.length + ' 页将合并为一个矢量 PDF；需桌面版 PowerPoint，首次会启动较慢，失败自动回退多页位图。';
+      } else {
+        el.exportNote.textContent = vec.unsupported
+          ? '当前 EMF 子图使用了裁剪/旋转/偏移，无法走矢量模式；可恢复默认的“适应”显示后再导出。'
+          : 'PDF 将优先使用矢量模式（保留 ' + vec.count + ' 张 EMF 的线条与文字），需桌面版 PowerPoint；首次启动较慢，之后会复用 PowerPoint 会话。失败会自动回退为高分辨率位图 PDF。';
+      }
     } else if (format === 'pdf' && allPages && vec.count > 0) {
-      el.exportNote.textContent = '全部图页导出暂用多页位图 PDF（矢量模式先支持当前页）；如需矢量可逐页导出。';
+      el.exportNote.textContent = '全部图页导出暂用多页位图 PDF；如需矢量可逐页导出。';
     }
     updateExportScopeUI();
     updateDpiChips();
@@ -2069,6 +2078,7 @@
     setStatus('正在读取 ' + list.length + ' 个文件…');
     let success = 0;
     let firstIndex = null;
+    const added = [];
     for (let i = 0; i < list.length && i < targets.length; i++) {
       const idx = targets[i];
       try {
@@ -2084,6 +2094,7 @@
           cell = await FP.decodeImageFile(list[i]);
         }
         state.cells[idx] = cell;
+        added.push(idx);
         if (firstIndex == null) firstIndex = idx;
         success++;
       } catch (err) {
@@ -2100,6 +2111,9 @@
         FP.toast('网格已满，忽略了 ' + (list.length - targets.length) + ' 个文件', 'error');
       } else {
         FP.toast('已添加 ' + success + ' 个子图', 'success');
+      }
+      if (FP.preflightCells && added.length) {
+        setTimeout(function () { FP.preflightCells(added, '图片预检'); }, 120);
       }
     } else {
       setStatus('文件读取失败');
@@ -2260,6 +2274,7 @@
     multiSelect = [];
     renderAll();
     FP.toast('已粘贴到子图 #' + (target + 1), 'success', 2200);
+    if (FP.preflightCells) setTimeout(function () { FP.preflightCells([target], '图片预检'); }, 120);
     if (next != null) {
       // 对话框保持打开，直接切换到下一个空子图；不要自动读取旧剪贴板，避免重复粘贴同一张图
       openPasteDialog(next, { autoRead: false });
@@ -2379,6 +2394,56 @@
   }
 
   /** 构造交给桌面版 PowerPoint 矢量排版引擎的当前页 spec。 */
+  /* ================= 工程文件 ================= */
+  function buildProjectFile() {
+    syncPage();
+    return {
+      type: 'figureplay-project',
+      schemaVersion: 1,
+      appVersion: FP.APP_VERSION,
+      savedAt: new Date().toISOString(),
+      project: snapshotProject()
+    };
+  }
+
+  function loadProjectFile(raw) {
+    const data = raw && raw.project ? raw.project : raw;
+    if (!data || !Array.isArray(data.pages) || !data.pages.length) {
+      throw new Error('工程文件中没有有效图页');
+    }
+    const next = normalizeProject(data);
+    if (!next || !next.pages.length) throw new Error('工程文件解析失败');
+    project = next;
+    state = pageState(project.pages[project.current], project.export);
+    geom = FP.computeGeometry(state.layout);
+    if (historyTimer) { clearTimeout(historyTimer); historyTimer = null; }
+    historySuspended = true;
+    renderAll();
+    historySuspended = false;
+    historyPast = [];
+    historyFuture = [];
+    historyLast = snapshotProject();
+    historyLastSig = projectSignature();
+    state.selectedCell = null;
+    multiSelect = [];
+    updateUndoRedoButtons();
+    project.pages.forEach(function (page) {
+      page.cells.forEach(function (cell) {
+        if (cell && cell.dataUrl) FP.preloadImage(cell.dataUrl);
+      });
+    });
+    scheduleSave();
+    renderAll();
+    return {
+      ok: true,
+      pages: project.pages.length,
+      current: project.current,
+      images: project.pages.reduce(function (n, page) {
+        return n + page.cells.filter(Boolean).length;
+      }, 0)
+    };
+  }
+
   /* ================= 配置模板 ================= */
   function snapshotConfig() {
     syncPage();
@@ -2437,10 +2502,10 @@
     };
   }
 
-  function buildVectorPdfSpec(cropOverride) {
+  function buildVectorPdfSpec(cropOverride, options) {
     if (!(FP.desktop && FP.desktop.available)) return { ok: false, reason: '需要桌面版 FigurePlay' };
     if (state.export.vectorPdf === false) return { ok: false, reason: '已关闭矢量 PDF' };
-    if (state.export.scope === 'all' && project.pages.length > 1) {
+    if (state.export.scope === 'all' && project.pages.length > 1 && !(options && options.allowAllPages)) {
       return { ok: false, reason: '全部页暂不支持矢量模式，将使用多页位图 PDF' };
     }
     const info = emfVectorInfo();
@@ -2488,7 +2553,8 @@
       panels.push(base);
     }
     const labels = [];
-    const labelTextEls = el.svg ? el.svg.querySelectorAll('.label-text') : [];
+    const usePreviewLabels = !(options && options.usePreviewLabels === false);
+    const labelTextEls = usePreviewLabels && el.svg ? el.svg.querySelectorAll('.label-text') : [];
     for (let i = 0; i < currentLabels.length; i++) {
       const label = currentLabels[i];
       const panel = label.panel;
@@ -2541,6 +2607,57 @@
       },
       emfCount: info.count
     };
+  }
+
+  function vectorSpecForPage(page, cropOverride) {
+    const prevState = state;
+    const prevGeom = geom;
+    const prevLabels = currentLabels;
+    try {
+      state = pageState(page, state.export);
+      geom = FP.computeGeometry(state.layout);
+      currentLabels = FP.computeLabels(state, geom);
+      return buildVectorPdfSpec(cropOverride, {
+        allowAllPages: true,
+        usePreviewLabels: page === project.pages[project.current]
+      });
+    } finally {
+      state = prevState;
+      geom = prevGeom;
+      currentLabels = prevLabels;
+    }
+  }
+
+  function buildAllPagesVectorSpec(crops) {
+    syncPage();
+    const geoms = project.pages.map(function (page) { return FP.computeGeometry(page.layout); });
+    for (let i = 1; i < geoms.length; i++) {
+      if (Math.abs(geoms[i].widthMm - geoms[0].widthMm) > 0.01 ||
+          Math.abs(geoms[i].heightMm - geoms[0].heightMm) > 0.01) {
+        return { ok: false, reason: '各图页尺寸不同，无法合并为同一 PowerPoint 矢量 PDF' };
+      }
+    }
+    const pages = [];
+    for (let i = 0; i < project.pages.length; i++) {
+      const page = project.pages[i];
+      const result = vectorSpecForPage(page, crops && crops[i] ? crops[i] : null);
+      if (!result.ok) {
+        return { ok: false, reason: '第 ' + (i + 1) + ' 页：' + result.reason };
+      }
+      pages.push(result.spec);
+    }
+    return { ok: true, pages: pages };
+  }
+
+  function hasUsableAllPagesVectorPdf() {
+    if (!(FP.desktop && FP.desktop.available && typeof FP.desktop.exportVectorPdfMulti === 'function')) return false;
+    if (state.export.format !== 'pdf' || state.export.vectorPdf === false) return false;
+    if (project.pages.length < 2) return false;
+    try {
+      return buildAllPagesVectorSpec(null).ok;
+    } catch (e) {
+      return false;
+    }
   }
 
   async function doExport() {
@@ -2613,7 +2730,40 @@
           });
         }
       }
-      if (hasUsableVectorPdf()) {
+      if (allPages && state.export.vectorPdf !== false && format === 'pdf' &&
+          FP.desktop && FP.desktop.available && typeof FP.desktop.exportVectorPdfMulti === 'function') {
+        setStatus('正在用 PowerPoint 生成全页矢量 PDF…');
+        if (document.fonts && document.fonts.ready) {
+          try { await document.fonts.ready; } catch (e) { /* ignore */ }
+        }
+        const multi = buildAllPagesVectorSpec(trimCrops);
+        if (multi.ok) {
+          try {
+            const r = await FP.desktop.exportVectorPdfMulti(multi.pages);
+            const blob = new Blob([base64ToBytes(r.pdfBase64)], { type: 'application/pdf' });
+            result = {
+              blob: blob,
+              filename: suggestedExportName('pdf', true),
+              format: 'pdf',
+              mime: 'application/pdf',
+              bytes: r.bytes || blob.size,
+              pageCount: project.pages.length,
+              vector: true,
+              engine: r.engine,
+              vectorPanels: r.vectorPanels,
+              rasterPanels: r.rasterPanels
+            };
+          } catch (err) {
+            console.warn('[FigurePlay] 全页矢量 PDF 失败，回退位图', err);
+            vectorFallback = true;
+            FP.toast('全页矢量 PDF 生成失败，已自动回退为多页位图 PDF：' + (err.message || err), 'error', 6500);
+          }
+        } else {
+          vectorFallback = true;
+          FP.toast('全页矢量不可用：' + multi.reason + '；将使用多页位图 PDF', 'info', 6000);
+        }
+      }
+      if (!result && !allPages && hasUsableVectorPdf()) {
         setStatus('正在用 PowerPoint 生成矢量 PDF…');
         if (document.fonts && document.fonts.ready) {
           try { await document.fonts.ready; } catch (e) { /* ignore */ }
@@ -4058,6 +4208,12 @@
       },
       applyConfigSnapshot: function (raw) {
         return applyConfigSnapshot(raw);
+      },
+      getProjectSnapshot: function () {
+        return buildProjectFile();
+      },
+      loadProjectSnapshot: function (raw) {
+        return loadProjectFile(raw);
       }
     };
     window.__FIGPLAY__ = api;

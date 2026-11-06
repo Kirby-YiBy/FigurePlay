@@ -463,6 +463,8 @@ namespace FigurePlay.Desktop.Bridge
 
         public int RasterPanels { get; set; }
 
+        public int Pages { get; set; } = 1;
+
         public List<string> Diagnostics { get; } = new List<string>();
 
         public static VectorPdfResult Fail(string error)

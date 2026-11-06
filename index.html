@@ -85,6 +85,20 @@
 <main class="app">
   <!-- ================= 左栏：排版 ================= -->
   <aside class="panel panel-left" aria-label="排版设置">
+    <section class="card" id="project-file-card">
+      <div class="card-head">
+        <h2>工程文件</h2>
+        <span class="card-sub" id="project-file-meta">—</span>
+      </div>
+      <p class="cell-hint" style="margin:2px 0 9px;">完整保存/打开当前工程（含图片、页面、编号、配置、分组），可迁移到其他电脑；文件扩展名为 <b>.figureplay-project</b>。</p>
+      <div class="config-card-actions">
+        <button type="button" class="btn btn-sm" id="btn-project-save">保存工程…</button>
+        <button type="button" class="btn btn-sm" id="btn-project-open">打开工程…</button>
+        <input type="file" id="project-file-input" accept=".figureplay-project,.json,application/json" hidden>
+      </div>
+      <p class="config-storage-hint" id="project-file-status"></p>
+    </section>
+
     <section class="card">
       <div class="card-head">
         <h2>论文模板</h2>
@@ -95,6 +109,7 @@
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M2.5 2.5h4v4h-4v-4Zm7 0h4v4h-4v-4Zm-7 7h4v4h-4v-4Zm7 0h4v4h-4v-4Z"/></svg>
         选择单栏 / 双栏模板…
       </button>
+      <button type="button" class="btn btn-block btn-sm" id="btn-journal-presets" style="margin-top:6px;">期刊配置库…</button>
     </section>
 
     <section class="card" id="config-card">
@@ -567,6 +582,12 @@
     </ul>
     <h3>支持图片</h3>
     <p>PNG、JPG、WebP、GIF（首帧）、BMP、SVG、TIFF，以及通过粘贴小画布导入的剪贴板图片；桌面版额外支持 MATLAB <b>.fig</b>。所有处理均在本地完成，不会上传任何文件。</p>
+    <h3>更新</h3>
+    <div class="update-box" id="update-box">
+      <span id="update-status">桌面版可检查更新；浏览器版请直接替换 index.html/js/assets 文件。</span>
+      <button type="button" class="btn btn-sm" id="btn-check-update">检查更新</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btn-download-update" hidden>下载并更新</button>
+    </div>
   </div>
 </dialog>
 
@@ -708,7 +729,8 @@
     <div class="config-list" id="config-list"></div>
 
     <div class="config-import-row">
-      <button type="button" class="btn btn-sm" id="config-import-btn">从 JSON 导入…</button>
+      <button type="button" class="btn btn-sm" id="config-restore-backup" hidden>恢复上一份备份</button>
+            <button type="button" class="btn btn-sm" id="config-import-btn">从 JSON 导入…</button>
       <input type="file" id="config-file-input" accept=".json,application/json" hidden>
       <span class="config-import-hint">配置文件只含网格/编号/导出设置，不含图片；导出 JSON 后可复制到其他电脑。</span>
     </div>
@@ -729,6 +751,18 @@
   </div>
 </dialog>
 
+<dialog class="help-dialog editor-dialog journal-dialog" id="journal-dialog">
+  <div class="help-head">
+    <h2>期刊配置库</h2>
+    <button type="button" class="btn btn-ghost btn-sm" id="journal-dialog-close">关闭</button>
+  </div>
+  <div class="help-body journal-body">
+    <p class="dialog-desc">选择期刊常用版式尺寸，会保留当前网格行列与图片，只调整页面宽度、宽高比、间距、编号字号和导出设置；应用后仍可手动微调。</p>
+    <div class="journal-group" id="journal-list"></div>
+    <p class="journal-note">不同期刊/年份的投稿要求可能变化，正式投稿前请以目标期刊最新 Author Guidelines 为准。</p>
+  </div>
+</dialog>
+
 <script src="vendor/pako.min.js"></script>
 <script src="vendor/UTIF.js"></script>
 <script src="js/util.js"></script>
@@ -743,6 +777,10 @@
 <script src="js/export.js"></script>
 <script src="js/demo.js"></script>
 <script src="js/app.js"></script>
+<script src="js/project-file.js"></script>
+<script src="js/journal-presets.js"></script>
+<script src="js/preflight.js"></script>
+<script src="js/updates.js"></script>
 <script src="js/config-profiles.js"></script>
 </body>
 </html>

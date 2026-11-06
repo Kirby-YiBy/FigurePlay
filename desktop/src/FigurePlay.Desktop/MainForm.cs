@@ -42,6 +42,9 @@ namespace FigurePlay.Desktop
         private readonly string _wwwroot;
         private readonly string _userDataFolder;
         private readonly ConfigProfileStore _configProfileStore;
+        private readonly DesktopPrefsStore _prefsStore;
+        private readonly UpdateService _updateService;
+        private bool _forceClose;
         private readonly List<ConsoleErrorRecord> _consoleErrors = new List<ConsoleErrorRecord>();
         private readonly List<string> _hostErrors = new List<string>();
         private readonly TaskCompletionSource<bool> _navigationTcs =
@@ -60,6 +63,8 @@ namespace FigurePlay.Desktop
             _wwwroot = AppPaths.WwwRoot;
             _userDataFolder = options.SelfTest ? AppPaths.SelfTestUserDataFolder : AppPaths.UserDataFolder;
             _configProfileStore = new ConfigProfileStore(options.SelfTest, options.OutDir);
+            _prefsStore = new DesktopPrefsStore(options.SelfTest, options.OutDir);
+            _updateService = new UpdateService(options.SelfTest, options.OutDir);
 
             SuspendLayout();
             Text = Program.WindowTitle;
@@ -396,6 +401,70 @@ namespace FigurePlay.Desktop
                     : BridgeProtocol.BuildConfigProfilesSavedError(requestId, error);
                 PostJsonToJs(json);
             }
+            else if (string.Equals(type, BridgeProtocol.TypeListConfigBackups, StringComparison.Ordinal))
+            {
+                string requestId = message.Value<string>("requestId") ?? string.Empty;
+                JArray backups;
+                string error;
+                bool ok = _configProfileStore.ListBackups(out backups, out error);
+                PostJsonToJs(ok
+                    ? BridgeProtocol.BuildConfigBackupsSuccess(requestId, backups, _configProfileStore.BackupDir)
+                    : BridgeProtocol.BuildConfigBackupsError(requestId, error));
+            }
+            else if (string.Equals(type, BridgeProtocol.TypeReadConfigBackup, StringComparison.Ordinal))
+            {
+                string requestId = message.Value<string>("requestId") ?? string.Empty;
+                string name = message.Value<string>("name") ?? string.Empty;
+                JArray profiles;
+                string path;
+                string error;
+                bool ok = _configProfileStore.ReadBackup(name, out profiles, out path, out error);
+                PostJsonToJs(ok
+                    ? BridgeProtocol.BuildConfigBackupSuccess(requestId, name, path, profiles)
+                    : BridgeProtocol.BuildConfigBackupError(requestId, error));
+            }
+            else if (string.Equals(type, BridgeProtocol.TypeExportVectorPdfMulti, StringComparison.Ordinal))
+            {
+                string requestId = message.Value<string>("requestId") ?? string.Empty;
+                VectorPdfResult multiResult = await _vectorPdfService.ExportMultiAsync(message);
+                string json = multiResult.Ok
+                    ? BridgeProtocol.BuildVectorPdfMultiSuccess(
+                        requestId,
+                        Convert.ToBase64String(multiResult.PdfBytes),
+                        multiResult.PdfBytes.Length,
+                        multiResult.Pages,
+                        multiResult.Engine,
+                        multiResult.VectorPanels,
+                        multiResult.RasterPanels,
+                        multiResult.Diagnostics)
+                    : BridgeProtocol.BuildVectorPdfMultiError(requestId, multiResult.Error);
+                if (!_closing)
+                {
+                    PostJsonToJs(json);
+                }
+            }
+            else if (string.Equals(type, BridgeProtocol.TypeCheckUpdate, StringComparison.Ordinal))
+            {
+                string requestId = message.Value<string>("requestId") ?? string.Empty;
+                JObject payload = await _updateService.CheckAsync();
+                payload["type"] = BridgeProtocol.TypeUpdateCheck;
+                payload["requestId"] = requestId;
+                if (!_closing)
+                {
+                    PostJsonToJs(payload.ToString(Newtonsoft.Json.Formatting.None));
+                }
+            }
+            else if (string.Equals(type, BridgeProtocol.TypeDownloadUpdate, StringComparison.Ordinal))
+            {
+                string requestId = message.Value<string>("requestId") ?? string.Empty;
+                JObject payload = await _updateService.DownloadAsync();
+                payload["type"] = BridgeProtocol.TypeUpdateDownload;
+                payload["requestId"] = requestId;
+                if (!_closing)
+                {
+                    PostJsonToJs(payload.ToString(Newtonsoft.Json.Formatting.None));
+                }
+            }
             else if (string.Equals(type, "app-ready", StringComparison.Ordinal))
             {
                 // 网页端桥（js/desktop.js）加载完成，立即回 host-ready，避免与轮询产生竞态。
@@ -510,7 +579,53 @@ namespace FigurePlay.Desktop
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
-            _closing = true;
+            // 自测/程序内部关闭：不弹 UI，直接关闭（selftest 不能卡在对话框）
+            if (_options.SelfTest || _forceClose || _closing)
+            {
+                _closing = true;
+                return;
+            }
+
+            string rememberedAction;
+            if (_prefsStore.TryGetCloseAction(out rememberedAction))
+            {
+                if (rememberedAction == DesktopPrefsStore.ActionMinimize)
+                {
+                    e.Cancel = true;
+                    WindowState = FormWindowState.Minimized;
+                    return;
+                }
+
+                if (rememberedAction == DesktopPrefsStore.ActionExit)
+                {
+                    _closing = true;
+                    return;
+                }
+            }
+
+            using (CloseConfirmDialog dialog = new CloseConfirmDialog())
+            {
+                DialogResult dialogResult = dialog.ShowDialog(this);
+                if (dialogResult != DialogResult.OK)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+
+                if (dialog.Remember)
+                {
+                    _prefsStore.SaveCloseAction(dialog.Result);
+                }
+
+                if (dialog.Result == DesktopPrefsStore.ActionMinimize)
+                {
+                    e.Cancel = true;
+                    WindowState = FormWindowState.Minimized;
+                    return;
+                }
+
+                _closing = true;
+            }
         }
 
         private void OnFormClosed(object sender, FormClosedEventArgs e)
@@ -777,12 +892,14 @@ namespace FigurePlay.Desktop
                     BeginInvoke(new Action(() =>
                     {
                         ExitCode = exitCode;
-                        Close();
+                        _forceClose = true;
+            Close();
                     }));
                 }
                 else
                 {
-                    Close();
+                    _forceClose = true;
+            Close();
                 }
             }
             catch

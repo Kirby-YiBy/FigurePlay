@@ -415,6 +415,7 @@ namespace FigurePlay.Desktop.Bridge
         /// 按给定 crop 组一页内容到新 presentation；可选导出探针 PNG / 保存 PDF。
         /// 探针导出失败只记录诊断，不抛异常（便于回退旧行为）。
         /// </summary>
+        /// <summary>按给定 crop 组一页内容到新 presentation；可选导出探针 PNG / 保存 PDF。</summary>
         private static void Compose(
             dynamic app,
             VectorPdfSpec spec,
@@ -432,6 +433,78 @@ namespace FigurePlay.Desktop.Bridge
                 pres.PageSetup.SlideWidth = (float)(crop.W * MmToPt);
                 pres.PageSetup.SlideHeight = (float)(crop.H * MmToPt);
                 dynamic slide = pres.Slides.Add(1, PpLayoutBlank);
+                FillSlide(slide, spec, crop, tempDir, countStats, result, 0);
+
+                if (!string.IsNullOrEmpty(probePath))
+                {
+                    try
+                    {
+                        int probeWidth = ProbeWidthPx;
+                        int probeHeight = (int)Math.Round(probeWidth * (crop.H / crop.W));
+                        if (probeHeight < 100)
+                        {
+                            probeHeight = 100;
+                        }
+
+                        if (probeHeight > ProbeMaxHeightPx)
+                        {
+                            probeHeight = ProbeMaxHeightPx;
+                            probeWidth = Math.Max(100, (int)Math.Round(probeHeight * (crop.W / crop.H)));
+                        }
+
+                        Trace("  compose: slide.Export probe " + probeWidth + "x" + probeHeight + " start");
+                        slide.Export(probePath, "PNG", probeWidth, probeHeight);
+                        Trace("  compose: slide.Export probe done");
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Diagnostics.Add(
+                            "slide.Export 墨迹探针失败（将回退为不校正）：" + DescribeException(ex));
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(pdfPath))
+                {
+                    Trace("  compose: SaveAs PDF start");
+                    pres.SaveAs(pdfPath, PpSaveAsPdf);
+                    Trace("  compose: SaveAs PDF done");
+                }
+            }
+            finally
+            {
+                try
+                {
+                    pres.Close();
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                try
+                {
+                    Marshal.FinalReleaseComObject(pres);
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// 把单页内容（背景/面板/标签）填充到指定 slide。供单页 Compose 与多页 ComposeMulti 复用。
+        /// </summary>
+        private static void FillSlide(
+            dynamic slide,
+            VectorPdfSpec spec,
+            CropBox crop,
+            string tempDir,
+            bool countStats,
+            VectorPdfResult result,
+            int pageIndex)
+        {
 
                 int backgroundRgb;
                 if (TryParseColor(spec.Background, out backgroundRgb))
@@ -448,7 +521,7 @@ namespace FigurePlay.Desktop.Bridge
                     }
                 }
 
-                if (countStats)
+                if (countStats && pageIndex == 0)
                 {
                     result.VectorPanels = 0;
                     result.RasterPanels = 0;
@@ -828,55 +901,257 @@ namespace FigurePlay.Desktop.Bridge
                     labelIndex++;
                 }
 
-                if (!string.IsNullOrEmpty(probePath))
+        }
+
+        /// <summary>
+        /// v1.5.0：把多页 spec 组版到同一个 PowerPoint presentation（每页一张幻灯片），
+        /// 一次 SaveAs 生成多页矢量 PDF；要求所有页面尺寸一致。
+        /// </summary>
+        internal static VectorPdfResult ComposeMultiWithApplication(
+            dynamic app,
+            IList<VectorPdfSpec> specs)
+        {
+            VectorPdfResult result = new VectorPdfResult();
+            if (app == null)
+            {
+                return VectorPdfResult.Fail("PowerPoint 会话不可用（可能已断开），请重试。");
+            }
+
+            if (specs == null || specs.Count == 0)
+            {
+                return VectorPdfResult.Fail("多页矢量 PDF 参数无效：pages 为空。");
+            }
+
+            if (specs.Count > 100)
+            {
+                return VectorPdfResult.Fail("多页矢量 PDF 页数过多（上限 100 页）。");
+            }
+
+            double pageW = specs[0].EffectiveWidthMm;
+            double pageH = specs[0].EffectiveHeightMm;
+            for (int i = 1; i < specs.Count; i++)
+            {
+                double w = specs[i].EffectiveWidthMm;
+                double h = specs[i].EffectiveHeightMm;
+                if (Math.Abs(w - pageW) > 0.01 || Math.Abs(h - pageH) > 0.01)
                 {
-                    try
+                    return VectorPdfResult.Fail(
+                        "多页矢量 PDF 要求所有页面尺寸一致：第 1 页 " +
+                        Math.Round(pageW, 2) + "×" + Math.Round(pageH, 2) +
+                        "mm，第 " + (i + 1) + " 页 " + Math.Round(w, 2) + "×" + Math.Round(h, 2) + "mm。");
+                }
+            }
+
+            if (pageW < MinPowerPointPageMm || pageH < MinPowerPointPageMm || pageW > 1400 || pageH > 1400)
+            {
+                return VectorPdfResult.Fail(
+                    "多页矢量 PDF 页面尺寸无效：" + Math.Round(pageW, 2) + "×" + Math.Round(pageH, 2) + "mm。");
+            }
+
+            string tempDir = Path.Combine(AppPaths.TempRoot, "vectorpdf-multi-" + Guid.NewGuid().ToString("N"));
+            string pdfPath = Path.Combine(tempDir, "output-multi.pdf");
+            dynamic pres = null;
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                pres = app.Presentations.Add(MsoFalse);
+                pres.PageSetup.SlideWidth = (float)(pageW * MmToPt);
+                pres.PageSetup.SlideHeight = (float)(pageH * MmToPt);
+                result.Pages = specs.Count;
+
+                List<CropBox> finalCrops = new List<CropBox>();
+                for (int pageIndex = 0; pageIndex < specs.Count; pageIndex++)
+                {
+                    VectorPdfSpec spec = specs[pageIndex];
+                    CropBox crop = spec.HasCrop
+                        ? new CropBox { X = spec.CropXmm, Y = spec.CropYmm, W = spec.CropWmm, H = spec.CropHmm }
+                        : new CropBox { X = 0, Y = 0, W = spec.WidthMm, H = spec.HeightMm };
+                    double targetMargin = spec.HasCrop ? spec.TrimMarginMm : 0;
+
+                    for (int iteration = 0; iteration <= MaxCorrectionIterations; iteration++)
                     {
-                        int probeWidth = ProbeWidthPx;
-                        int probeHeight = (int)Math.Round(probeWidth * (crop.H / crop.W));
-                        if (probeHeight < 100)
+                        dynamic probeSlide = pres.Slides.Add(pres.Slides.Count + 1, PpLayoutBlank);
+                        string probePath = Path.Combine(tempDir, "multi-probe-" + pageIndex + "-" + iteration + ".png");
+                        FillSlide(probeSlide, spec, crop, tempDir, false, result, pageIndex);
+                        try
                         {
-                            probeHeight = 100;
+                            int probeWidth = ProbeWidthPx;
+                            int probeHeight = (int)Math.Round(probeWidth * (crop.H / crop.W));
+                            if (probeHeight < 100)
+                            {
+                                probeHeight = 100;
+                            }
+
+                            if (probeHeight > ProbeMaxHeightPx)
+                            {
+                                probeHeight = ProbeMaxHeightPx;
+                                probeWidth = Math.Max(100, (int)Math.Round(probeHeight * (crop.W / crop.H)));
+                            }
+
+                            probeSlide.Export(probePath, "PNG", probeWidth, probeHeight);
+                        }
+                        catch (Exception probeException)
+                        {
+                            result.Diagnostics.Add("多页探针导出失败（第 " + (pageIndex + 1) + " 页）：" +
+                                                   DescribeException(probeException));
+                        }
+                        finally
+                        {
+                            try
+                            {
+                                probeSlide.Delete();
+                            }
+                            catch
+                            {
+                                // ignore
+                            }
                         }
 
-                        if (probeHeight > ProbeMaxHeightPx)
+                        double leftMm;
+                        double topMm;
+                        double rightMm;
+                        double bottomMm;
+                        bool measured = TryMeasureInkMargins(
+                            probePath,
+                            spec.Background,
+                            crop,
+                            result,
+                            out leftMm,
+                            out topMm,
+                            out rightMm,
+                            out bottomMm);
+                        if (!measured)
                         {
-                            probeHeight = ProbeMaxHeightPx;
-                            probeWidth = Math.Max(100, (int)Math.Round(probeHeight * (crop.W / crop.H)));
+                            break;
                         }
 
-                        Trace("  compose: slide.Export probe " + probeWidth + "x" + probeHeight + " start");
-                        slide.Export(probePath, "PNG", probeWidth, probeHeight);
-                        Trace("  compose: slide.Export probe done");
+                        result.Diagnostics.Add(string.Format(
+                            "multi ink-probe page{0} iter{1}: crop={2} margins L={3:0.##} T={4:0.##} R={5:0.##} B={6:0.##}mm",
+                            pageIndex + 1,
+                            iteration,
+                            crop,
+                            leftMm,
+                            topMm,
+                            rightMm,
+                            bottomMm));
+
+                        bool marginsOk =
+                            Math.Abs(leftMm - targetMargin) <= MarginToleranceMm &&
+                            Math.Abs(topMm - targetMargin) <= MarginToleranceMm &&
+                            Math.Abs(rightMm - targetMargin) <= MarginToleranceMm &&
+                            Math.Abs(bottomMm - targetMargin) <= MarginToleranceMm;
+                        if (marginsOk || iteration == MaxCorrectionIterations)
+                        {
+                            break;
+                        }
+
+                        CropBox adjusted = AdjustCrop(
+                            crop,
+                            spec,
+                            leftMm,
+                            topMm,
+                            rightMm,
+                            bottomMm,
+                            targetMargin);
+                        if (adjusted == null || CropEquals(crop, adjusted, 0.02))
+                        {
+                            break;
+                        }
+
+                        crop = adjusted;
                     }
-                    catch (Exception ex)
+
+                    finalCrops.Add(crop);
+                }
+
+                // 最终页面尺寸 = 校正后的 crop（trim 安全边距可能改变 crop 大小）
+                CropBox firstFinal = finalCrops[0];
+                for (int i = 1; i < finalCrops.Count; i++)
+                {
+                    if (Math.Abs(finalCrops[i].W - firstFinal.W) > 0.01 ||
+                        Math.Abs(finalCrops[i].H - firstFinal.H) > 0.01)
                     {
-                        result.Diagnostics.Add(
-                            "slide.Export 墨迹探针失败（将回退为不校正）：" + DescribeException(ex));
+                        return VectorPdfResult.Fail(
+                            "多页矢量 PDF 校正后页面尺寸不一致：第 1 页 " +
+                            Math.Round(firstFinal.W, 2) + "×" + Math.Round(firstFinal.H, 2) +
+                            "mm，第 " + (i + 1) + " 页 " +
+                            Math.Round(finalCrops[i].W, 2) + "×" + Math.Round(finalCrops[i].H, 2) + "mm。");
                     }
                 }
 
-                if (!string.IsNullOrEmpty(pdfPath))
+                pres.PageSetup.SlideWidth = (float)(firstFinal.W * MmToPt);
+                pres.PageSetup.SlideHeight = (float)(firstFinal.H * MmToPt);
+                result.Diagnostics.Add(string.Format(
+                    "multi-pdf final page size: {0:0.###}×{1:0.###}mm (crop {2})",
+                    firstFinal.W,
+                    firstFinal.H,
+                    firstFinal));
+
+                for (int pageIndex = 0; pageIndex < specs.Count; pageIndex++)
                 {
-                    Trace("  compose: SaveAs PDF start");
-                    pres.SaveAs(pdfPath, PpSaveAsPdf);
-                    Trace("  compose: SaveAs PDF done");
+                    dynamic slide = pres.Slides.Add(pageIndex + 1, PpLayoutBlank);
+                    FillSlide(slide, specs[pageIndex], finalCrops[pageIndex], tempDir, true, result, pageIndex);
                 }
+
+                pres.SaveAs(pdfPath, PpSaveAsPdf);
+                if (!File.Exists(pdfPath) || new FileInfo(pdfPath).Length < 100)
+                {
+                    return VectorPdfResult.Fail("多页矢量 PDF 导出失败：PowerPoint 未生成有效 PDF。");
+                }
+
+                byte[] pdfBytes = File.ReadAllBytes(pdfPath);
+                if (pdfBytes.Length < 5 ||
+                    pdfBytes[0] != (byte)'%' || pdfBytes[1] != (byte)'P' ||
+                    pdfBytes[2] != (byte)'D' || pdfBytes[3] != (byte)'F')
+                {
+                    return VectorPdfResult.Fail("多页矢量 PDF 导出失败：PowerPoint 导出的文件不是有效 PDF。");
+                }
+
+                result.Ok = true;
+                result.PdfBytes = pdfBytes;
+                result.Engine = "PowerPoint";
+                result.Pages = specs.Count;
+                result.Diagnostics.Add(string.Format(
+                    "multi-pdf: {0} bytes / {1} pages / vectorPanels={2} rasterPanels={3}",
+                    pdfBytes.Length,
+                    result.Pages,
+                    result.VectorPanels,
+                    result.RasterPanels));
+                return result;
+            }
+            catch (Exception ex)
+            {
+                return VectorPdfResult.Fail("多页矢量 PDF 导出失败：" + DescribeException(ex));
             }
             finally
             {
-                try
+                if (pres != null)
                 {
-                    pres.Close();
-                }
-                catch
-                {
-                    // ignore
+                    try
+                    {
+                        pres.Close();
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+
+                    try
+                    {
+                        Marshal.FinalReleaseComObject(pres);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
                 }
 
                 try
                 {
-                    Marshal.FinalReleaseComObject(pres);
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
                 }
                 catch
                 {
@@ -884,6 +1159,7 @@ namespace FigurePlay.Desktop.Bridge
                 }
             }
         }
+
 
         // ---------------------------------------------------------------- 墨迹探针
 

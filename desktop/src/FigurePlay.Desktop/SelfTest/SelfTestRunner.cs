@@ -214,6 +214,18 @@ namespace FigurePlay.Desktop.SelfTest
                 JObject configPersistence = await RunConfigPersistenceTestAsync();
                 _report["configPersistence"] = configPersistence;
 
+                // 6.3) v1.5.0 X 关闭提示偏好（隔离 prefs.json，不弹 UI）
+                JObject closePrefs = await RunClosePrefsTestAsync();
+                _report["closePrefs"] = closePrefs;
+
+                // 6.4) v1.5.0 多页矢量 PDF（同一 presentation 多幻灯片，一次 SaveAs）
+                JObject vectorPdfMulti = await RunVectorPdfMultiChecksAsync();
+                _report["vectorPdfMulti"] = vectorPdfMulti;
+
+                // 6.5) v1.5.0 更新检查/下载安全约束（不联网、不覆盖测试 exe）
+                JObject updateChecks = await RunUpdateChecksAsync();
+                _report["updateChecks"] = updateChecks;
+
                 // v1.3.3/1.4.1：所有 PowerPoint 用例（含 config1 编号导出）完成后再统一 shutdown 并检查残留
                 JObject powerPointLifecycle = await RunPowerPointLifecycleCheckAsync();
                 _report["powerPointLifecycle"] = powerPointLifecycle;
@@ -298,6 +310,33 @@ namespace FigurePlay.Desktop.SelfTest
                 if (!screenshot.Value<bool>("ok"))
                 {
                     failures.Add("窗口截图失败：" + (screenshot.Value<string>("error") ?? "未知原因"));
+                }
+
+                bool updateChecksOk = _report["updateChecks"] is JObject &&
+                                      ((JObject)_report["updateChecks"]).Value<bool>("ok");
+                if (!updateChecksOk)
+                {
+                    JObject upd = _report["updateChecks"] as JObject;
+                    failures.Add("更新检查/下载安全测试失败：" +
+                                 (upd == null ? "未生成报告" : (upd.Value<string>("error") ?? "未知原因")));
+                }
+
+                bool closePrefsOk = _report["closePrefs"] is JObject &&
+                                    ((JObject)_report["closePrefs"]).Value<bool>("ok");
+                if (!closePrefsOk)
+                {
+                    JObject cfgPrefs = _report["closePrefs"] as JObject;
+                    failures.Add("X 关闭提示偏好测试失败：" +
+                                 (cfgPrefs == null ? "未生成报告" : (cfgPrefs.Value<string>("error") ?? "未知原因")));
+                }
+
+                bool vectorPdfMultiOk = _report["vectorPdfMulti"] is JObject &&
+                                        ((JObject)_report["vectorPdfMulti"]).Value<bool>("ok");
+                if (!vectorPdfMultiOk)
+                {
+                    JObject multi = _report["vectorPdfMulti"] as JObject;
+                    failures.Add("多页矢量 PDF 测试失败：" +
+                                 (multi == null ? "未生成报告" : (multi.Value<string>("error") ?? "未知原因")));
                 }
 
                 bool configPersistenceOk = _report["configPersistence"] is JObject &&
