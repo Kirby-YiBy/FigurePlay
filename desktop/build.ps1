@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.3.3-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.3.3-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.3.4-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.3.4-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -222,6 +222,12 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
         else {
             Write-Info '应用矢量 E2E  : skipped（MATLAB .fig 不可用）'
         }
+    }
+    if ($report.appearanceSmoke) {
+        $smoke = $report.appearanceSmoke
+        $dark = $smoke.checks.dark
+        $restored = $smoke.checks.restored
+        Write-Info ("主题冒烟      : ok={0} dark={1}/{2} bodyLum={3} shellWhite={4} PNG一致={5}/{6} consoleΔ={7}" -f $smoke.ok, $dark.dataTheme, $dark.dataAccent, $dark.bodyLuminance, $dark.shellWhite, $smoke.checks.pngEqualDark, $smoke.checks.pngEqualRestored, $smoke.checks.consoleErrorDelta)
     }
     if ($report.powerPointLifecycle) {
         $lc = $report.powerPointLifecycle

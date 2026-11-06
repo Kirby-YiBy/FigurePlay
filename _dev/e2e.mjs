@@ -51,7 +51,8 @@ const finalV13 = argv.includes('--final-v13');
 const finalV131 = argv.includes('--final-v131');
 const finalV132 = argv.includes('--final-v132');
 const finalV133 = argv.includes('--final-v133');
-const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131 || finalV132 || finalV133;
+const finalV134 = argv.includes('--final-v134');
+const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131 || finalV132 || finalV133 || finalV134;
 const suiteArg = argv.find((item) => item.startsWith('--suite='));
 const suite = suiteArg ? suiteArg.slice('--suite='.length) : 'all';
 const onlyArg = argv.find((item) => item.startsWith('--only='));
@@ -73,38 +74,43 @@ if (!SUITES[suite]) {
   console.error(`未知 suite: ${suite}（可选 v10 / v11 / v12 / v13 / all）`);
   process.exit(2);
 }
-const finalNaming = finalV133
+const finalNaming = finalV134
   ? {
-    reportName: 'report-v1.3.3.md', shotsName: 'screens-v1.3.3', title: '（v1.3.3）',
-    keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v133',
+    reportName: 'report-v1.3.4.md', shotsName: 'screens-v1.3.4', title: '（v1.3.4）',
+    keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v134',
   }
-  : (finalV132
+  : (finalV133
     ? {
-      reportName: 'report-v1.3.2.md', shotsName: 'screens-v1.3.2', title: '（v1.3.2）',
-      keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v132',
+      reportName: 'report-v1.3.3.md', shotsName: 'screens-v1.3.3', title: '（v1.3.3）',
+      keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v133',
     }
-    : (finalV131
+    : (finalV132
       ? {
-        reportName: 'report-v1.3.1.md', shotsName: 'screens-v1.3.1', title: '（v1.3.1）',
-        keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v131',
+        reportName: 'report-v1.3.2.md', shotsName: 'screens-v1.3.2', title: '（v1.3.2）',
+        keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v132',
       }
-      : (finalV13
+      : (finalV131
         ? {
-          reportName: 'report-v1.3.md', shotsName: 'screens-v1.3', title: '（v1.3）',
-          keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v13',
+          reportName: 'report-v1.3.1.md', shotsName: 'screens-v1.3.1', title: '（v1.3.1）',
+          keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v131',
         }
-        : (finalV12
+        : (finalV13
           ? {
-            reportName: 'report-v1.2.md', shotsName: 'screens-v1.2', title: '（v1.2）',
-            keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v12',
+            reportName: 'report-v1.3.md', shotsName: 'screens-v1.3', title: '（v1.3）',
+            keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v13',
           }
-          : (finalV11
+          : (finalV12
             ? {
-              reportName: 'report-v1.1.md', shotsName: 'shots-v1.1', exportsName: 'exports-v1.1', title: '（v1.1）',
+              reportName: 'report-v1.2.md', shotsName: 'screens-v1.2', title: '（v1.2）',
+              keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v12',
             }
-            : {
-              reportName: 'report.md', shotsName: 'shots', exportsName: 'exports', title: '',
-            })))));
+            : (finalV11
+              ? {
+                reportName: 'report-v1.1.md', shotsName: 'shots-v1.1', exportsName: 'exports-v1.1', title: '（v1.1）',
+              }
+              : {
+                reportName: 'report.md', shotsName: 'shots', exportsName: 'exports', title: '',
+              }))))));
 
 const log = (...args) => console.log(...args);
 const section = (title) => log(`\n=== ${title} ===`);
@@ -147,14 +153,16 @@ function readPlaywrightCoreVersion() {
 }
 
 function appFilesSnapshot() {
-  const files = ['index.html', 'assets/styles.css'];
-  const jsDir = path.join(path.dirname(APP_INDEX), 'js');
-  try {
-    for (const name of fs.readdirSync(jsDir)) {
-      if (name.endsWith('.js')) files.push(`js/${name}`);
+  const files = ['index.html'];
+  const appRoot = path.dirname(APP_INDEX);
+  for (const relDir of ['assets', 'js']) {
+    try {
+      for (const name of fs.readdirSync(path.join(appRoot, relDir))) {
+        if (/\.(js|css)$/i.test(name)) files.push(`${relDir}/${name}`);
+      }
+    } catch (err) {
+      /* ignore */
     }
-  } catch (err) {
-    /* ignore */
   }
   return files.map((rel) => {
     const abs = path.join(path.dirname(APP_INDEX), rel);
@@ -174,7 +182,7 @@ function scenarioMatches(scenario, selector) {
   const name = scenario.name.toUpperCase();
   return selector.some((item) => {
     const token = item.toUpperCase();
-    if (/^[A-V]$/.test(token)) return code === token; // 单字母只按场景代号精确匹配
+    if (/^[A-W]$/.test(token)) return code === token; // 单字母只按场景代号精确匹配
     return code === token || name === token || name.startsWith(token);
   });
 }
@@ -248,7 +256,7 @@ async function writeFinalReport(summary, runDir, naming = {}) {
   let prunedExports = 0;
   if (keepExportsInRun) {
     // E: 盘空间有限：只保留关键导出样例（各格式主样例 + 合并/分组/多页证据）
-    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v12-|^fp-v132-|^fp-v133-)/;
+    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v12-|^fp-v132-|^fp-v133-|^fp-v134-)/;
     for (const file of walkFiles(exportsSourceDir)) {
       if (keepExportRe.test(path.basename(file))) continue;
       try {
@@ -458,6 +466,12 @@ async function writeFinalReport(summary, runDir, naming = {}) {
       const ov = neg.overlay || {};
       lines.push(`- V 负间距：gap 0→${JSON.stringify(neg.negative.gap)}，cellW ${round(neg.base.cellW, 2)}→${round(neg.negative.cellW, 2)}mm，面板重叠 X=${round(neg.negative.overlapX, 2)}mm / Y=${round(neg.negative.overlapY, 2)}mm；clamp=${JSON.stringify(neg.clamped && [neg.clamped.colGap, neg.clamped.rowGap])}；PNG/PDF/trim/SVG 导出均通过（trim 余量 ${JSON.stringify(neg.exports.trim && neg.exports.trim.margins)}）；v1.3.3 overlay 最后子层=${ov.lastChildClass || '-'}、单选/多选=${ov.singleSelection ? 1 : 0}/${ov.multiSelectionCount || 0}、hover 在顶层、导出 SVG 无交互元素`);
     }
+    if (scenario.code === 'W' && evidence.appearance) {
+      const look = evidence.appearance;
+      const iso = look.exportIsolation || {};
+      const darkStyles = look.darkStyles || {};
+      lines.push(`- W 界面外观：默认跟随系统（dark→light→dark 自动切换）；3 模式 + 7 主题色 active/aria/localStorage reload 保留；深色下 body/panel/输入框/帮助弹窗深色、figure-shell 预览仍白（${darkStyles.figureShell || '-'}）；导出隔离 PNG=${iso.pngEqual}、SVG=${iso.svgEqual}（${iso.variants ? iso.variants.join('/') : ''}），预览 DOM hash 不变；1000×700 按钮/popover 不溢出`);
+    }
     if (scenario.code === 'T' && evidence.rangeNums) {
       lines.push(`- T 数字输入：zoom=${evidence.rangeNums.state.zoom}、jpgQuality=${evidence.rangeNums.state.jpgQuality}、bgOpacity=${evidence.rangeNums.state.bgOpacity}（夹取/双向同步通过）`);
     }
@@ -484,14 +498,15 @@ async function writeFinalReport(summary, runDir, naming = {}) {
 
   lines.push('', '## 复现命令', '', '```powershell');
   lines.push(`# 完整 E2E（含报告与截图）`);
-  const finalCmd = finalV133 ? '--suite=all --final-v133'
-    : (finalV132 ? '--suite=all --final-v132'
-      : (finalV131 ? '--suite=all --final-v131'
-        : (finalV13 ? '--suite=all --final-v13'
-          : (finalV12 ? '--suite=all --final-v12' : (finalV11 ? '--final-v11' : '--final')))));
+  const finalCmd = finalV134 ? '--suite=all --final-v134'
+    : (finalV133 ? '--suite=all --final-v133'
+      : (finalV132 ? '--suite=all --final-v132'
+        : (finalV131 ? '--suite=all --final-v131'
+          : (finalV13 ? '--suite=all --final-v13'
+            : (finalV12 ? '--suite=all --final-v12' : (finalV11 ? '--final-v11' : '--final'))))));
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} ${finalCmd}`);
-  lines.push(`# v1.3.3 全量（v1.0 回归 + v1.1 + v1.2 + v1.3 + 交互 overlay 顶层描边）`);
-  lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v133`);
+  lines.push(`# v1.3.4 全量（v1.0 回归 + v1.1 + v1.2 + v1.3 + 界面外观）`);
+  lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v134`);
   lines.push(`# 只跑某场景 / suite`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --only=U`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=v13`);
@@ -565,7 +580,7 @@ async function main() {
   log(`FigurePlay E2E run ${runId}  [suite=${suite}: ${SUITES[suite].name}]`);
   log(`应用: ${APP_INDEX}  (源码版本 ${readAppVersionFromSource()})`);
   log(`场景: ${selected.map((scenario) => scenario.code).join(', ')}  (headless=${!headed})`);
-  const finalTargetText = finalV133 || finalV132 || finalV131 || finalV13 || finalV12
+  const finalTargetText = finalV134 || finalV133 || finalV132 || finalV131 || finalV13 || finalV12
     ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / run 内关键导出`
     : (finalMode ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / artifacts/${finalNaming.exportsName}/` : '');
   log(`产物: ${runDir}${finalTargetText}\n`);

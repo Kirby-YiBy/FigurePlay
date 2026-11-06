@@ -1233,13 +1233,25 @@ const negativeGapScenario = {
       null, { label: 'selection outline panel0' });
     const panel0Info = panels1.find((panel) => panel.index === 0);
     const selection0 = overlay.selectionOutlines[0];
-    ctx.check('负间距下选中 panel0：.cell-selection-outline 位置/尺寸=panel0',
+    const outlineColors = await page.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.display = 'none';
+      document.body.appendChild(probe);
+      const resolve = (value) => {
+        probe.style.color = value;
+        return getComputedStyle(probe).color;
+      };
+      const colors = { selection: resolve('var(--accent)'), hover: resolve('var(--accent-hover)') };
+      probe.remove();
+      return colors;
+    });
+    ctx.check('负间距下选中 panel0：.cell-selection-outline 位置/尺寸=panel0 且 stroke 跟随 --accent',
       !!selection0 && Math.abs(selection0.x - panel0Info.x) < 0.05
       && Math.abs(selection0.y - panel0Info.y) < 0.05
       && Math.abs(selection0.w - panel0Info.w) < 0.05
       && Math.abs(selection0.h - panel0Info.h) < 0.05
-      && selection0.stroke === '#2563eb',
-      { outline: selection0, panel: panel0Info });
+      && selection0.computedStroke === outlineColors.selection,
+      { outline: selection0, panel: panel0Info, expectedStroke: outlineColors.selection });
     ctx.check('选中描边位于顶层 overlay 层内（最后一层，不被重叠子图遮挡）',
       selection0.inOverlay === true && overlay.overlayIndex === overlay.children.length - 1,
       { inOverlay: selection0.inOverlay, overlayIndex: overlay.overlayIndex, childCount: overlay.children.length });
@@ -1251,13 +1263,14 @@ const negativeGapScenario = {
       null, { label: 'hover outline overlap' });
     const panel1Info = panels1.find((panel) => panel.index === 1);
     const hover0 = overlay.hoverOutlines[0];
-    ctx.check('重叠区悬停产生 .cell-hover-outline（bbox=可见 panel1，虚线样式）',
+    ctx.check('重叠区悬停产生 .cell-hover-outline（bbox=可见 panel1，虚线 stroke 跟随 --accent-hover）',
       !!hover0 && Math.abs(hover0.x - panel1Info.x) < 0.05
       && Math.abs(hover0.y - panel1Info.y) < 0.05
       && Math.abs(hover0.w - panel1Info.w) < 0.05
       && Math.abs(hover0.h - panel1Info.h) < 0.05
-      && hover0.stroke === '#60a5fa',
-      { hover: hover0, panel: panel1Info, point: hoverPoint });
+      && hover0.computedStroke === outlineColors.hover
+      && String(hover0.strokeDasharray || 'none') !== 'none',
+      { hover: hover0, panel: panel1Info, point: hoverPoint, expectedStroke: outlineColors.hover });
     ctx.check('选中+悬停描边同时在 overlay 顶层（互不遮挡）',
       overlay.selectionOutlines.every((outline) => outline.inOverlay)
       && overlay.hoverOutlines.every((outline) => outline.inOverlay)
@@ -1440,6 +1453,401 @@ const negativeGapScenario = {
   },
 };
 
+/* ----------------------------- W 界面外观 ----------------------------- */
+function rgbOf(value) {
+  const match = /rgba?\(([^)]+)\)/.exec(String(value || ''));
+  if (!match) return null;
+  const parts = match[1].split(',').map((item) => parseFloat(item));
+  if (parts.length < 3 || parts.slice(0, 3).some((item) => !isFinite(item))) return null;
+  return parts.slice(0, 3);
+}
+function luminanceOf(value) {
+  const rgb = rgbOf(value);
+  if (!rgb) return null;
+  return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+}
+function isDarkBg(value) {
+  const luminance = luminanceOf(value);
+  return luminance !== null && luminance < 110;
+}
+function isLightBg(value) {
+  const luminance = luminanceOf(value);
+  return luminance !== null && luminance > 180;
+}
+
+const appearanceScenario = {
+  code: 'W',
+  name: 'appearance',
+  title: '界面外观',
+  description: '默认跟随系统（emulateMedia dark/light 自动切换）；#btn-appearance 弹层 3 模式 + 7 主题色 active/aria + localStorage reload 保留；深色下 body/panel/帮助弹窗/输入框深色、figure-shell 预览仍白；浅/深/主题色切换导出 PNG/SVG base64 完全一致、#preview-svg DOM 不变；1000×700 顶栏按钮/popover 不溢出',
+  async run(ctx) {
+    const { page } = ctx;
+
+    // 1) 默认跟随系统：先模拟系统深色再加载（无 localStorage 偏好）
+    await app.emulateColorScheme(page, 'dark');
+    await app.openAppReady(page);
+    if (!(await app.ensureV134(ctx, page))) return;
+    await app.clearAppearanceStorage(page);
+    await app.reloadAppReady(page);
+
+    let state = await app.getAppearanceState(page);
+    ctx.check('默认无偏好：mode=system、系统深色时 theme=dark',
+      state.html.mode === 'system' && state.html.theme === 'dark' && state.mediaDark === true
+      && !!state.appearanceApi && state.appearanceApi.mode === 'system'
+      && state.appearanceApi.theme === 'dark',
+      { html: state.html, api: state.appearanceApi, mediaDark: state.mediaDark });
+    ctx.check('默认无外观偏好写入 localStorage',
+      state.localStorage.mode === null && state.localStorage.accent === null,
+      state.localStorage);
+    ctx.check('系统深色下：body/panel/输入框计算背景为深色',
+      isDarkBg(state.styles.body && state.styles.body.background)
+      && isDarkBg(state.styles.panel && state.styles.panel.background)
+      && isDarkBg(state.styles.input && state.styles.input.background),
+      {
+        body: state.styles.body && state.styles.body.background,
+        panel: state.styles.panel && state.styles.panel.background,
+        input: state.styles.input && state.styles.input.background,
+      });
+    ctx.check('系统深色下：预览图稿仍白（figure-shell 背景 + figure-bg 填充）',
+      isLightBg(state.styles.figureShell && state.styles.figureShell.background)
+      && String(state.figureBgFill || '').toLowerCase() === '#ffffff',
+      {
+        figureShell: state.styles.figureShell && state.styles.figureShell.background,
+        figureBgFill: state.figureBgFill,
+      });
+    ctx.check('系统深色下 color-scheme=dark',
+      /dark/.test(String(state.html.colorScheme || '')), state.html.colorScheme);
+
+    // 2) 系统浅色 → 自动跟随（light）
+    await app.emulateColorScheme(page, 'light');
+    state = await app.waitAppearanceState(page,
+      (value) => value.html.theme === 'light' && value.html.mode === 'system' && value.mediaDark === false,
+      null, { label: 'system -> light' });
+    ctx.check('系统媒体变浅色时自动跟随：theme=light、mode 仍 system',
+      state.html.theme === 'light' && state.html.mode === 'system'
+      && state.mediaDark === false && state.appearanceApi.theme === 'light',
+      { html: state.html, api: state.appearanceApi });
+    ctx.check('浅色下 body/panel/输入框计算背景不是深色',
+      isLightBg(state.styles.body && state.styles.body.background)
+      && !isDarkBg(state.styles.panel && state.styles.panel.background)
+      && !isDarkBg(state.styles.input && state.styles.input.background),
+      {
+        body: state.styles.body && state.styles.body.background,
+        panel: state.styles.panel && state.styles.panel.background,
+        input: state.styles.input && state.styles.input.background,
+      });
+
+    // 3) 系统再切回深色 → 自动跟随（双向）
+    await app.emulateColorScheme(page, 'dark');
+    state = await app.waitAppearanceState(page,
+      (value) => value.html.theme === 'dark' && value.html.mode === 'system',
+      null, { label: 'system -> dark (again)' });
+    ctx.check('系统媒体变深色时再次自动跟随（双向）',
+      state.html.theme === 'dark' && state.html.mode === 'system' && state.mediaDark === true,
+      state.html);
+
+    // 4) 外观菜单 UI
+    await app.openAppearanceMenu(page);
+    state = await app.getAppearanceState(page);
+    ctx.check('#btn-appearance 打开弹层：可见、aria-expanded=true',
+      state.popover.hidden === false && state.button.ariaExpanded === 'true'
+      && !!state.popover.rect && state.popover.rect.visible === true,
+      { popover: state.popover, ariaExpanded: state.button.ariaExpanded });
+    ctx.check('弹层 3 个模式按钮（浅色/深色/跟随系统）且 system active/aria-pressed',
+      state.modes.length === 3
+      && state.modes.map((item) => item.mode).join(',') === 'light,dark,system'
+      && state.modes[2].active === true && state.modes[2].ariaPressed === 'true'
+      && state.modes[0].active === false && state.modes[1].active === false,
+      state.modes);
+    ctx.check('弹层 7 个主题色 swatch，默认 blue active/aria-pressed',
+      state.accents.length === 7
+      && state.accents.map((item) => item.accent).join(',') === 'blue,indigo,teal,emerald,violet,rose,amber'
+      && state.accents[0].active === true && state.accents[0].ariaPressed === 'true',
+      state.accents);
+
+    // 显式浅色：即使系统深色也保持 light
+    await app.clickAppearanceMode(page, 'light');
+    state = await app.waitAppearanceState(page, (value) => value.html.mode === 'light'
+      && value.html.theme === 'light', null, { label: 'explicit light' });
+    ctx.check('点击「浅色」：mode/theme=light 且 active/aria 同步、localStorage 写入 light',
+      state.html.mode === 'light' && state.html.theme === 'light'
+      && state.modes[0].active === true && state.modes[0].ariaPressed === 'true'
+      && state.localStorage.mode === 'light',
+      { html: state.html, modes: state.modes, storage: state.localStorage.mode });
+    await page.waitForTimeout(200);
+    const explicitLight = await app.getAppearanceState(page);
+    ctx.check('显式浅色不随系统切换（系统 dark 下仍 light）',
+      explicitLight.html.theme === 'light' && explicitLight.html.mode === 'light'
+      && explicitLight.mediaDark === true,
+      { theme: explicitLight.html.theme, mode: explicitLight.html.mode, mediaDark: explicitLight.mediaDark });
+
+    // 显式深色
+    await app.clickAppearanceMode(page, 'dark');
+    state = await app.waitAppearanceState(page, (value) => value.html.mode === 'dark'
+      && value.html.theme === 'dark', null, { label: 'explicit dark' });
+    ctx.check('点击「深色」：mode/theme=dark 且 active/aria 同步',
+      state.html.mode === 'dark' && state.html.theme === 'dark'
+      && state.modes[1].active === true && state.modes[1].ariaPressed === 'true',
+      { html: state.html, modes: state.modes });
+
+    // 切回跟随系统
+    await app.clickAppearanceMode(page, 'system');
+    state = await app.waitAppearanceState(page, (value) => value.html.mode === 'system',
+      null, { label: 'back to system' });
+    ctx.check('点击「跟随系统」：mode=system 并解析当前系统深色',
+      state.html.mode === 'system'
+      && state.html.theme === (state.mediaDark ? 'dark' : 'light'),
+      state.html);
+
+    // 关闭弹层（按钮 / Escape / 外部点击）
+    await app.closeAppearanceMenu(page);
+    state = await app.getAppearanceState(page);
+    ctx.check('点击关闭按钮：弹层隐藏、aria-expanded=false',
+      state.popover.hidden === true && state.button.ariaExpanded === 'false', state.button);
+    await app.openAppearanceMenu(page);
+    await page.keyboard.press('Escape');
+    await app.waitAppearanceState(page, (value) => value.popover.hidden === true,
+      null, { label: 'escape close' });
+    ctx.check('按 Escape 关闭弹层', true);
+    await app.openAppearanceMenu(page);
+    await page.locator('#stage').click({ position: { x: 6, y: 6 } });
+    await app.waitAppearanceState(page, (value) => value.popover.hidden === true,
+      null, { label: 'outside close' });
+    ctx.check('点击弹层外部关闭', true);
+
+    // 5) 7 种主题色
+    await app.openAppearanceMenu(page);
+    const accentResults = [];
+    for (const accent of app.V134_ACCENTS) {
+      await app.clickAccent(page, accent);
+      state = await app.waitAppearanceState(page, (value, expected) => value.html.accent === expected,
+        accent, { label: `accent ${accent}` });
+      const active = state.accents.find((item) => item.accent === accent) || {};
+      const primaryBg = await page.evaluate(() => {
+        const node = document.getElementById('btn-export-top');
+        if (!node) return null;
+        const style = getComputedStyle(node);
+        return style.backgroundImage !== 'none' ? style.backgroundImage : style.backgroundColor;
+      });
+      accentResults.push({
+        accent,
+        htmlAccent: state.html.accent,
+        cssVar: String(state.cssVars.accent || '').toLowerCase(),
+        active: active.active,
+        ariaPressed: active.ariaPressed,
+        storage: state.localStorage.accent,
+        primaryBg,
+      });
+    }
+    const accentsOk = accentResults.every((item) => item.htmlAccent === item.accent
+      && item.cssVar === app.V134_ACCENT_HEX[item.accent]
+      && item.active === true && item.ariaPressed === 'true'
+      && item.storage === item.accent);
+    ctx.check('7 种主题色逐个切换：data-accent/--accent/swatch active/aria/localStorage 均正确',
+      accentsOk, accentResults);
+    ctx.check('主题色变化影响按钮主色（--accent 生效于 UI）',
+      new Set(accentResults.map((item) => item.primaryBg)).size >= 5,
+      accentResults.map((item) => ({ accent: item.accent, primaryBg: item.primaryBg })));
+
+    // 保留深色 + 紫罗兰，测试 reload 持久化
+    await app.clickAppearanceMode(page, 'dark');
+    await app.clickAccent(page, 'violet');
+    state = await app.waitAppearanceState(page,
+      (value) => value.html.theme === 'dark' && value.html.accent === 'violet',
+      null, { label: 'dark violet persisted' });
+    ctx.check('设置深色+紫罗兰写入 localStorage（themeMode/accent 两个键）',
+      state.localStorage.mode === 'dark' && state.localStorage.accent === 'violet',
+      state.localStorage);
+    await app.closeAppearanceMenu(page);
+
+    // 6) reload 保留（系统改为浅色也不影响显式深色）
+    await app.emulateColorScheme(page, 'light');
+    await app.reloadAppReady(page);
+    state = await app.getAppearanceState(page);
+    ctx.check('reload 后保留 mode=dark/accent=violet（系统浅色不覆盖显式深色）',
+      state.html.mode === 'dark' && state.html.theme === 'dark' && state.html.accent === 'violet'
+      && state.mediaDark === false
+      && String(state.cssVars.accent || '').toLowerCase() === app.V134_ACCENT_HEX.violet,
+      { html: state.html, mediaDark: state.mediaDark, accentVar: state.cssVars.accent });
+    await app.openAppearanceMenu(page);
+    state = await app.getAppearanceState(page);
+    ctx.check('reload 后弹层 active 状态与持久化一致（深色/紫罗兰）',
+      state.modes[1].active === true && state.modes[1].ariaPressed === 'true'
+      && state.accents.find((item) => item.accent === 'violet').active === true,
+      { modes: state.modes, accents: state.accents.filter((item) => item.active) });
+
+    // 7) 深色下帮助弹窗/输入框/预览
+    await page.locator('#btn-help').click();
+    await app.waitForDialog(page, '#help-dialog', { open: true, label: 'help-dialog' });
+    state = await app.getAppearanceState(page);
+    ctx.check('深色下帮助弹窗计算背景为深色、文字为浅色',
+      isDarkBg(state.styles.helpDialog && state.styles.helpDialog.background)
+      && luminanceOf(state.styles.helpDialog && state.styles.helpDialog.color) > 150,
+      state.styles.helpDialog);
+    await page.locator('#help-close').click();
+    await app.waitForDialog(page, '#help-dialog', { open: false, label: 'help-dialog close' });
+    state = await app.getAppearanceState(page);
+    ctx.check('深色下输入框/面板背景为深色且预览图稿仍白',
+      isDarkBg(state.styles.input && state.styles.input.background)
+      && isDarkBg(state.styles.panel && state.styles.panel.background)
+      && isLightBg(state.styles.figureShell && state.styles.figureShell.background)
+      && String(state.figureBgFill || '').toLowerCase() === '#ffffff',
+      {
+        input: state.styles.input && state.styles.input.background,
+        panel: state.styles.panel && state.styles.panel.background,
+        figureShell: state.styles.figureShell && state.styles.figureShell.background,
+        figureBg: state.figureBgFill,
+      });
+
+    // 8) 1000×700 顶栏按钮/弹层不溢出
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await app.waitFor(page, () => Math.round(window.innerWidth) === 1000 && Math.round(window.innerHeight) === 700,
+      null, { timeout: 6000, label: 'viewport 1000x700' });
+    await app.openAppearanceMenu(page);
+    state = await app.getAppearanceState(page);
+    const btnRect = state.button.rect;
+    const popRect = state.popover.rect;
+    ctx.check('1000×700：外观按钮可见且完整落在视口内',
+      !!btnRect && btnRect.visible && btnRect.left >= 0 && btnRect.top >= 0
+      && btnRect.right <= 1000 && btnRect.bottom <= 700,
+      btnRect);
+    ctx.check('1000×700：popover 完整落在视口内（不溢出）',
+      !!popRect && popRect.visible && popRect.left >= 0 && popRect.top >= 0
+      && popRect.right <= 1000 && popRect.bottom <= 700,
+      popRect);
+    ctx.check('1000×700：页面无横向溢出',
+      Math.max(state.viewport.bodyScrollWidth, state.viewport.docScrollWidth)
+        <= state.viewport.innerWidth + 1,
+      state.viewport);
+    await app.closeAppearanceMenu(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await app.waitFor(page, () => Math.round(window.innerWidth) === 1440, null,
+      { timeout: 6000, label: 'viewport 1440x900' });
+
+    // 9) 导出隔离 + 预览 DOM 不变
+    await app.api.clearAll(page);
+    await app.api.setLayout(page, 2, 2);
+    await app.uploadFiles(page, [samplePath('sample-1.png'), samplePath('sample-2.png')], null, 2);
+    await app.setNumberInput(page, '#filename-input', 'appearance-isolation');
+    await app.waitHistoryCommit(page);
+    await app.clearPreviewHover(page);
+
+    async function captureAppearance(label) {
+      await app.clearPreviewHover(page);
+      const snapshot = await app.getAppearanceState(page);
+      const png = await app.getExportBase64(page, 'png', { dpi: 150, filename: 'appearance-isolation' });
+      const svg = await app.getExportBase64(page, 'svg', { filename: 'appearance-isolation', transparent: false });
+      return {
+        label, html: snapshot.html, preview: snapshot.preview, project: snapshot.project,
+        history: snapshot.history,
+        png: { base64: png.base64, filename: png.filename },
+        svg: { base64: svg.base64, filename: svg.filename },
+      };
+    }
+
+    await app.setAppearance(page, 'light', 'blue');
+    await app.waitAppearanceState(page, (value) => value.html.theme === 'light'
+      && value.html.accent === 'blue', null, { label: 'export light blue' });
+    const baseCapture = await captureAppearance('light-blue');
+    await app.setAppearance(page, 'dark', 'blue');
+    await app.waitAppearanceState(page, (value) => value.html.theme === 'dark',
+      null, { label: 'export dark blue' });
+    const darkCapture = await captureAppearance('dark-blue');
+    await app.setAppearance(page, 'light', 'amber');
+    await app.waitAppearanceState(page, (value) => value.html.accent === 'amber',
+      null, { label: 'export light amber' });
+    const amberCapture = await captureAppearance('light-amber');
+    await app.setAppearance(page, 'dark', 'violet');
+    await app.waitAppearanceState(page, (value) => value.html.accent === 'violet',
+      null, { label: 'export dark violet' });
+    const violetCapture = await captureAppearance('dark-violet');
+
+    const captures = [baseCapture, darkCapture, amberCapture, violetCapture];
+    const pngEqual = captures.every((item) => item.png.base64 === baseCapture.png.base64
+      && item.png.filename === baseCapture.png.filename);
+    const svgEqual = captures.every((item) => item.svg.base64 === baseCapture.svg.base64
+      && item.svg.filename === baseCapture.svg.filename);
+    ctx.check('导出隔离：light/dark/amber/violet 下 PNG base64 完全一致',
+      pngEqual, captures.map((item) => ({ label: item.label, filename: item.png.filename, length: item.png.base64.length })));
+    ctx.check('导出隔离：light/dark/amber/violet 下 SVG base64 完全一致',
+      svgEqual, captures.map((item) => ({ label: item.label, filename: item.svg.filename, length: item.svg.base64.length })));
+    ctx.check('外观切换不改变 #preview-svg DOM（innerHTML hash/长度/子层/命中区一致）',
+      captures.every((item) => item.preview.hash === baseCapture.preview.hash
+        && item.preview.length === baseCapture.preview.length
+        && item.preview.childCount === baseCapture.preview.childCount
+        && item.preview.cellHits === baseCapture.preview.cellHits),
+      captures.map((item) => ({ label: item.label, preview: item.preview })));
+    ctx.check('外观切换不改变项目/几何数据（project 签名一致）',
+      captures.every((item) => JSON.stringify(item.project) === JSON.stringify(baseCapture.project)),
+      captures.map((item) => ({ label: item.label, project: item.project })));
+    ctx.check('外观切换不触发历史记录变化（canUndo/canRedo/undoCount 一致）',
+      captures.every((item) => JSON.stringify(item.history) === JSON.stringify(baseCapture.history)),
+      captures.map((item) => ({ label: item.label, history: item.history })));
+
+    // 外观偏好不写入项目 session
+    await page.waitForTimeout(1000);
+    const savedProject = await app.readSavedSession(page);
+    const savedRaw = JSON.stringify(savedProject && savedProject.payload);
+    ctx.check('外观设置不写入项目自动保存（saved payload 无 themeMode/accent 字段）',
+      !!savedProject && !/themeMode|"accent"|figureplay\.accent/.test(savedRaw)
+      && (savedProject.pages || []).length >= 1,
+      { pages: savedProject && savedProject.pages && savedProject.pages.length,
+        hasThemeKeys: /themeMode|"accent"/.test(savedRaw) });
+
+    // 多页状态不受外观影响
+    await app.addPage(page, 'new');
+    await app.waitPageState(page, () => window.__FIGPLAY__.getPreviewInfo().pageCount === 2,
+      null, { label: 'appearance pages 2' });
+    const pagesBefore = await app.api.getState(page);
+    await app.setAppearance(page, 'light', 'rose');
+    await app.setAppearance(page, 'dark', 'teal');
+    const pagesAfter = await app.api.getState(page);
+    ctx.check('外观设置不影响多页状态（pageCount/pageIndex/页面名不变）',
+      pagesBefore.pageCount === pagesAfter.pageCount
+      && pagesBefore.pageIndex === pagesAfter.pageIndex
+      && JSON.stringify((pagesBefore.pages || []).map((p) => p.name))
+        === JSON.stringify((pagesAfter.pages || []).map((p) => p.name)),
+      { before: { pageCount: pagesBefore.pageCount, pageIndex: pagesBefore.pageIndex },
+        after: { pageCount: pagesAfter.pageCount, pageIndex: pagesAfter.pageIndex } });
+
+    // 最终深色+紫罗兰截图（含内容与弹层）
+    await app.setPage(page, 0);
+    await app.setAppearance(page, 'dark', 'violet');
+    await app.openAppearanceMenu(page);
+    await ctx.screenshot('appearance-dark');
+
+    ctx.evidence.appearance = {
+      systemFollow: {
+        darkInitial: { mode: 'system', theme: 'dark', mediaDark: true },
+        light: { mode: 'system', theme: 'light', mediaDark: false },
+        darkAgain: { mode: 'system', theme: 'dark', mediaDark: true },
+      },
+      modes: state.modes,
+      accents: accentResults,
+      persistence: { mode: 'dark', accent: 'violet', afterReload: state.html },
+      darkStyles: {
+        body: state.styles.body && state.styles.body.background,
+        panel: state.styles.panel && state.styles.panel.background,
+        input: state.styles.input && state.styles.input.background,
+        helpDialog: state.styles.helpDialog && state.styles.helpDialog.background,
+        figureShell: state.styles.figureShell && state.styles.figureShell.background,
+        figureBgFill: state.figureBgFill,
+      },
+      viewport: state.viewport,
+      exportIsolation: {
+        pngEqual, svgEqual,
+        pngFilename: baseCapture.png.filename,
+        pngBase64Length: baseCapture.png.base64.length,
+        svgBase64Length: baseCapture.svg.base64.length,
+        previewHash: baseCapture.preview.hash,
+        variants: captures.map((item) => item.label),
+      },
+      pagesUnaffected: { count: pagesAfter.pageCount, index: pagesAfter.pageIndex },
+    };
+    await app.api.clearAll(page);
+  },
+};
+
 export const scenariosV13 = [
   gridCustomScenario,
   saveAsScenario,
@@ -1448,4 +1856,5 @@ export const scenariosV13 = [
   rangeNumberScenario,
   vectorPdfScenario,
   negativeGapScenario,
+  appearanceScenario,
 ];

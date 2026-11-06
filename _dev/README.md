@@ -37,10 +37,12 @@ $py='C:\Users\DragonDance\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pyt
 #    v1.0 → A–F；v1.1 → G–L（合并/模板/批量编号/粘贴弹窗/桌面桥/高DPI）；
 #    v1.2 → M–O（多页/撤销重做/分组/多页导出/.fig）；v1.3 → P–U（网格/保存位置/加页距/PDF裁剪/数字输入/EMF矢量PDF）；
 #    v1.3.1 → 同 P–U，S/U 改为按实际墨迹（ink）裁剪 PDF 白边；v1.3.2 → +V 负间距，S 增加编号防裁安全边距；
-#    v1.3.3 → V 增加交互 overlay 顶层描边（负间距重叠下选中/悬停不被遮挡）
+#    v1.3.3 → V 增加交互 overlay 顶层描边（负间距重叠下选中/悬停不被遮挡）；
+#    v1.3.4 → +W 界面外观（浅/深/跟随系统 + 7 主题色，导出隔离）
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --list
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=v13 --only=V     # 单场景（A..V）
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v133 # v1.3.3 正式：report-v1.3.3.md / screens-v1.3.3 / artifacts/e2e-v133/<run>
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=v13 --only=W     # 单场景（A..W）
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v134 # v1.3.4 正式：report-v1.3.4.md / screens-v1.3.4 / artifacts/e2e-v134/<run>
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v133 # v1.3.3 历史产物：report-v1.3.3.md / screens-v1.3.3 / artifacts/e2e-v133
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v132 # v1.3.2 历史产物：report-v1.3.2.md / screens-v1.3.2 / artifacts/e2e-v132
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v131 # v1.3.1 历史产物：report-v1.3.1.md / screens-v1.3.1 / artifacts/e2e-v131
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v13  # v1.3 历史产物：report-v1.3.md / screens-v1.3 / artifacts/e2e-v13
@@ -60,7 +62,7 @@ _dev/
   lib/app.mjs                  # 应用契约 helper：__FIGPLAY__ API、预览 DOM、编号期望、自动保存、拖放；
                                #   v1.1：合并/模板/多选/批量编号/粘贴弹窗/桌面桥；v1.2：多页/撤销重做/分组/多页导出/.fig；
                                #   v1.3：网格上限/保存位置 fake picker/autoPad/PDF 裁剪/数字输入/EMF 矢量 PDF；v1.3.1：getInkCropBox；
-                               #   v1.3.2：编号防裁安全边距/负间距；v1.3.3：交互 overlay 顶层描边
+                               #   v1.3.2：编号防裁安全边距/负间距；v1.3.3：交互 overlay 顶层描边；v1.3.4：界面外观
   lib/verify.mjs               # 调用 Python 校验器（PNG/JPG/SVG/PDF/ZIP；SVG clip/像素探针/pdfinfo 页数/PDF 墨迹四边余量）
   scenarios.mjs                # v1.0 场景 A–F
   scenarios-v11.mjs            # v1.1 场景 G–L
@@ -72,7 +74,8 @@ _dev/
   contract-notes-v1.3.1.md     # v1.3.1 ink 裁剪契约、冻结哈希与实测记录
   contract-notes-v1.3.2.md     # v1.3.2 安全边距/负间距契约、冻结哈希与实测记录
   contract-notes-v1.3.3.md     # v1.3.3 交互 overlay 契约、冻结哈希与实测记录
-  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|all，--only，--final/--final-v11/v12/v13/v131/v132/v133
+  contract-notes-v1.3.4.md     # v1.3.4 界面外观契约、冻结哈希与实测记录
+  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|all，--only，--final/--final-v11/v12/v13/v131/v132/v133/v134
   report.md / shots/           # v1.0 正式报告与截图
   report-v1.1.md / shots-v1.1/ # v1.1 正式报告与截图
   report-v1.2.md / screens-v1.2/  # v1.2 正式报告与 17 张关键截图（--final-v12）
@@ -80,6 +83,7 @@ _dev/
   report-v1.3.1.md / screens-v1.3.1/  # v1.3.1 ink 裁剪正式报告与 24 张关键截图（--final-v131）
   report-v1.3.2.md / screens-v1.3.2/  # v1.3.2 安全边距/负间距正式报告与 25 张关键截图（--final-v132）
   report-v1.3.3.md / screens-v1.3.3/  # v1.3.3 交互 overlay 正式报告与 25 张关键截图（--final-v133）
+  report-v1.3.4.md / screens-v1.3.4/  # v1.3.4 界面外观正式报告与 26 张关键截图（--final-v134）
   smoke/upload-test.html       # file:// 能力验证页（window.smoke.*）
   smoke/run-smoke.mjs          # smoke 运行器 → artifacts/smoke-report.json
   tools/gen-samples.py         # 示例图片生成（samples/manifest.json 含尺寸/主色/缩略图/sha256）
@@ -99,6 +103,7 @@ _dev/
     e2e-v131/<run>/            # v1.3.1 最终 run：results.json + exports/（35 个关键导出，空间受控）
     e2e-v132/<run>/            # v1.3.2 最终 run：results.json + exports/（28 个关键导出，空间受控）
     e2e-v133/<run>/            # v1.3.3 最终 run：results.json + exports/（29 个关键导出，空间受控）
+    e2e-v134/<run>/            # v1.3.4 最终 run：results.json + exports/（29 个关键导出，空间受控）
 ```
 
 ## E2E 场景 A–F（应用 FigurePlay v1.0.0 已通过）
@@ -213,6 +218,19 @@ v1.3.2 的 755 断言保留 + V 新增 19 条 overlay 断言。产物整包 19.0
 | 场景 | v1.3.3 覆盖点 |
 | --- | --- |
 | V 负间距（扩展） | `#preview-svg` 最后子元素=`interaction-overlay-layer`（cells/groups/labels 均在其下，pointer-events:none）；-10/-10 重叠下选中 panel0 的 `.cell-selection-outline` bbox=panel0，重叠区悬停 panel1 出现 `.cell-hover-outline`，两者均在顶层；Ctrl 多选 2 个 outline；切换选择/模板/页后 overlay 重建无陈旧描边；离开 SVG hover 消失；导出 SVG 不含 overlay/selection/hover/cell-hit/cell-outline/is-selected 且结构校验通过 |
+
+## E2E v1.3.4 界面外观（浅色/深色/跟随系统 + 7 主题色，应用 v1.3.4 已通过）
+
+命令：`& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v134`（v1.0 回归 + v1.1 + v1.2 + v1.3 + v1.3.1/1.3.2/1.3.3 全量，正式产物
+`_dev/report-v1.3.4.md`、`_dev/screens-v1.3.4/`、`_dev/artifacts/e2e-v134/<run>/`）。
+
+最终状态（2026-11-06，run `2026-11-06_11-42-16-411`）：**23/23 场景 PASS，819/819 断言 PASS，0 失败项**；
+v1.3.3 的 774 断言保留 + W 新增 45 条外观断言。产物整包 19.66MB（<20MB 预算），截图 26 张。
+应用源冻结哈希（12 个文件完整 sha256，含 `assets/theme.css`/`js/appearance.js`）程序核对 ALL MATCH，见 [`contract-notes-v1.3.4.md`](contract-notes-v1.3.4.md)。
+
+| 场景 | v1.3.4 覆盖点 |
+| --- | --- |
+| W 界面外观 | 默认跟随系统（emulateMedia dark→light→dark 双向自动）；`#btn-appearance` 弹层 3 模式 + 7 主题色 active/aria/`--accent`/按钮渐变；localStorage `figureplay.themeMode/accent` + reload 保留（含 boot script）；深色下 body/panel/帮助弹窗/输入框深色、`#figure-shell` 仍白；light/dark/accent 四组合导出 PNG（202616B）/SVG（210152B）base64 完全一致、`#preview-svg` innerHTML hash 不变；项目/历史/多页状态不受影响；1000×700 顶栏按钮与 popover 不溢出 |
 
 ## smoke 已验证结论（Chrome 156 headless，file:// 无任何放宽启动参数）
 

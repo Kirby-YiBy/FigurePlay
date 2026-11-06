@@ -2175,7 +2175,10 @@ export async function getOverlayState(page) {
         h: Number(node.getAttribute('height')),
         bbox: { x: box.x, y: box.y, w: box.width, h: box.height },
         stroke: node.getAttribute('stroke'),
+        computedStroke: style ? style.stroke : null,
         strokeWidth: node.getAttribute('stroke-width'),
+        computedStrokeWidth: style ? style.strokeWidth : null,
+        strokeDasharray: style ? style.strokeDasharray : null,
         pointerEvents: style ? style.pointerEvents : null,
         inOverlay: !!node.closest('.interaction-overlay-layer'),
       };
@@ -2317,6 +2320,290 @@ export async function ensureV133(ctx, page, label = 'v1.3.3 契约') {
   ctx.note('v1.3.3 交互 overlay 契约探测（信息，非问题）', JSON.stringify(probe));
   return probe.overlayIndex === childCount - 1 && probe.overlayPointerEvents === 'none';
 }
+
+/* ==========================================================================
+ * v1.3.4 新增：界面外观（浅色/深色/跟随系统 + 7 主题色）
+ * ========================================================================== */
+
+export const V134_MODES = ['light', 'dark', 'system'];
+export const V134_ACCENTS = ['blue', 'indigo', 'teal', 'emerald', 'violet', 'rose', 'amber'];
+export const V134_ACCENT_HEX = {
+  blue: '#2563eb', indigo: '#4f46e5', teal: '#0d9488', emerald: '#059669',
+  violet: '#7c3aed', rose: '#e11d48', amber: '#d97706',
+};
+export const APPEARANCE_MODE_KEY = 'figureplay.themeMode';
+export const APPEARANCE_ACCENT_KEY = 'figureplay.accent';
+
+/** 读取外观状态：html data-*、CSS 变量、关键区域计算样式、菜单/主题色、localStorage、预览 DOM 摘要 */
+export async function getAppearanceState(page) {
+  return page.evaluate(() => {
+    const root = document.documentElement;
+    const api = window.__FIGPLAY__;
+    const getStyle = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const style = window.getComputedStyle(node);
+      return {
+        background: style.backgroundColor,
+        color: style.color,
+        display: style.display,
+        visible: node.getClientRects().length > 0,
+      };
+    };
+    const rect = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const box = node.getBoundingClientRect();
+      return {
+        left: Math.round(box.left), top: Math.round(box.top),
+        right: Math.round(box.right), bottom: Math.round(box.bottom),
+        width: Math.round(box.width), height: Math.round(box.height),
+        visible: box.width > 0 && box.height > 0,
+      };
+    };
+    const styleOf = (id) => getStyle('#' + id);
+    const modeButtons = Array.from(document.querySelectorAll('#theme-mode-group [data-theme-mode]')).map((btn) => ({
+      mode: btn.getAttribute('data-theme-mode'),
+      text: (btn.textContent || '').trim(),
+      active: btn.classList.contains('is-active'),
+      ariaPressed: btn.getAttribute('aria-pressed'),
+    }));
+    const accentButtons = Array.from(document.querySelectorAll('#accent-group [data-accent]')).map((btn) => ({
+      accent: btn.getAttribute('data-accent'),
+      label: btn.getAttribute('aria-label'),
+      active: btn.classList.contains('is-active'),
+      ariaPressed: btn.getAttribute('aria-pressed'),
+      inlineBg: btn.style.background,
+    }));
+    const svg = document.getElementById('preview-svg');
+    const svgHtml = svg ? svg.innerHTML : null;
+    let hash = 5381;
+    if (svgHtml) {
+      for (let i = 0; i < svgHtml.length; i++) hash = ((hash << 5) + hash + svgHtml.charCodeAt(i)) | 0;
+    }
+    let project = null;
+    let history = null;
+    try {
+      const state = api.getState();
+      const info = api.getPreviewInfo();
+      project = {
+        pageCount: state.pageCount,
+        pageIndex: state.pageIndex,
+        pages: (state.pages || []).map((page) => page.name),
+        rows: state.layout.rows,
+        cols: state.layout.cols,
+        colGap: state.layout.colGap,
+        rowGap: state.layout.rowGap,
+        filled: (state.cells || []).filter(Boolean).length,
+        labels: (info.labels || []).map((label) => label.text).join('|'),
+      };
+      history = api.getHistoryState ? api.getHistoryState() : null;
+    } catch (err) { project = null; }
+    const appearanceApi = (api && typeof api.getAppearance === 'function') ? api.getAppearance() : null;
+    const popover = document.getElementById('appearance-popover');
+    const btn = document.getElementById('btn-appearance');
+    return {
+      html: {
+        theme: root.getAttribute('data-theme'),
+        mode: root.getAttribute('data-theme-mode'),
+        accent: root.getAttribute('data-accent'),
+        colorScheme: window.getComputedStyle(root).colorScheme,
+      },
+      appearanceApi,
+      mediaDark: !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches),
+      cssVars: {
+        accent: window.getComputedStyle(root).getPropertyValue('--accent').trim(),
+        bg: window.getComputedStyle(root).getPropertyValue('--bg').trim(),
+        panel: window.getComputedStyle(root).getPropertyValue('--panel').trim(),
+        text: window.getComputedStyle(root).getPropertyValue('--text').trim(),
+      },
+      styles: {
+        body: getStyle('body'),
+        panel: getStyle('.panel'),
+        figureShell: getStyle('#figure-shell'),
+        input: styleOf('filename-input'),
+        helpDialog: styleOf('help-dialog'),
+        topbar: getStyle('.topbar'),
+      },
+      figureBgFill: (() => {
+        const node = document.querySelector('#preview-svg .figure-bg');
+        return node ? node.getAttribute('fill') : null;
+      })(),
+      localStorage: {
+        mode: localStorage.getItem('figureplay.themeMode'),
+        accent: localStorage.getItem('figureplay.accent'),
+        session: localStorage.getItem('figureplay.session.v1') ? 'present' : null,
+      },
+      popover: {
+        hidden: popover ? popover.hidden : null,
+        rect: rect('#appearance-popover'),
+      },
+      button: {
+        ariaExpanded: btn ? btn.getAttribute('aria-expanded') : null,
+        rect: rect('#btn-appearance'),
+        visible: !!rect('#btn-appearance') && rect('#btn-appearance').visible,
+      },
+      modes: modeButtons,
+      accents: accentButtons,
+      viewport: {
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        bodyScrollWidth: document.body.scrollWidth,
+        docScrollWidth: document.documentElement.scrollWidth,
+        bodyClientWidth: document.body.clientWidth,
+      },
+      preview: {
+        hash, length: svgHtml ? svgHtml.length : 0,
+        childCount: svg ? svg.children.length : 0,
+        cellHits: svg ? svg.querySelectorAll('.cell-hit').length : 0,
+      },
+      project,
+      history,
+    };
+  });
+}
+
+/** API/FP.appearance 设置模式与主题色 */
+export async function setAppearance(page, mode, accent) {
+  return page.evaluate(([m, a]) => {
+    const api = window.__FIGPLAY__;
+    if (api && typeof api.setAppearance === 'function') return api.setAppearance(m, a);
+    if (window.FP && FP.appearance) {
+      if (typeof a === 'string') FP.appearance.setAccent(a);
+      if (typeof m === 'string') FP.appearance.setMode(m);
+      return FP.appearance.get();
+    }
+    throw new Error('外观 API 不存在');
+  }, [mode, accent]);
+}
+
+export async function waitAppearanceState(page, predicate, arg, options = {}) {
+  const { timeout = 6000, label = 'appearance state' } = options;
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    const state = await getAppearanceState(page);
+    try {
+      if (state && predicate(state, arg)) return state;
+    } catch (err) { /* ignore */ }
+    await page.waitForTimeout(80);
+  }
+  throw new Error(`等待超时（${label}, ${timeout}ms）`);
+}
+
+export async function openAppearanceMenu(page) {
+  await page.locator('#btn-appearance').click();
+  await waitFor(page, () => {
+    const pop = document.getElementById('appearance-popover');
+    const btn = document.getElementById('btn-appearance');
+    return !!pop && !pop.hidden && btn.getAttribute('aria-expanded') === 'true';
+  }, null, { timeout: 5000, label: 'appearance menu open' });
+}
+export async function closeAppearanceMenu(page) {
+  await page.locator('#appearance-close').click();
+  await waitFor(page, () => {
+    const pop = document.getElementById('appearance-popover');
+    return !!pop && pop.hidden;
+  }, null, { timeout: 5000, label: 'appearance menu close' });
+}
+export async function clickAppearanceMode(page, mode) {
+  await page.locator(`#theme-mode-group [data-theme-mode="${mode}"]`).click();
+  await waitFor(page, (m) => document.documentElement.getAttribute('data-theme-mode') === m, mode,
+    { timeout: 5000, label: `appearance mode ${mode}` });
+}
+export async function clickAccent(page, accent) {
+  await page.locator(`#accent-group [data-accent="${accent}"]`).click();
+  await waitFor(page, (a) => document.documentElement.getAttribute('data-accent') === a, accent,
+    { timeout: 5000, label: `appearance accent ${accent}` });
+}
+
+/** 清除外观偏好（不动项目 session） */
+export async function clearAppearanceStorage(page) {
+  await page.evaluate(({ modeKey, accentKey }) => {
+    try {
+      localStorage.removeItem(modeKey);
+      localStorage.removeItem(accentKey);
+    } catch (err) { /* ignore */ }
+  }, { modeKey: APPEARANCE_MODE_KEY, accentKey: APPEARANCE_ACCENT_KEY });
+}
+
+/** 系统颜色方案模拟（dark/light） */
+export async function emulateColorScheme(page, scheme) {
+  await page.emulateMedia({ colorScheme: scheme });
+}
+
+/** 导出后用于“外观隔离”对比的 base64 + 文件名 */
+export async function getExportBase64(page, format, overrides) {
+  const result = await page.evaluate(([fmt, opts]) => window.__FIGPLAY__.exportBase64(fmt, opts),
+    [format, overrides || null]);
+  return {
+    base64: result.base64,
+    filename: result.filename,
+    mime: result.mime,
+    pageCount: result.pageCount,
+    bytes: result.bytes,
+  };
+}
+
+/** 探测 v1.3.4 契约（版本 + 外观 UI/API/CSS 变量） */
+export async function probeV134(page) {
+  return page.evaluate(() => {
+    const api = window.__FIGPLAY__;
+    const root = document.documentElement;
+    const modes = Array.from(document.querySelectorAll('#theme-mode-group [data-theme-mode]'))
+      .map((btn) => btn.getAttribute('data-theme-mode'));
+    const accents = Array.from(document.querySelectorAll('#accent-group [data-accent]'))
+      .map((btn) => btn.getAttribute('data-accent'));
+    return {
+      version: api ? api.version || null : null,
+      apiPresent: !!api,
+      hasSetAppearance: !!(api && typeof api.setAppearance === 'function'),
+      hasGetAppearance: !!(api && typeof api.getAppearance === 'function'),
+      hasFpAppearance: !!(window.FP && FP.appearance && typeof FP.appearance.get === 'function'),
+      themeCssLoaded: !!window.getComputedStyle(root).getPropertyValue('--accent').trim(),
+      buttonExists: !!document.getElementById('btn-appearance'),
+      popoverExists: !!document.getElementById('appearance-popover'),
+      modes,
+      accents,
+      accentLabels: Array.from(document.querySelectorAll('#accent-group [data-accent]'))
+        .map((btn) => btn.getAttribute('aria-label')),
+      html: {
+        theme: root.getAttribute('data-theme'),
+        mode: root.getAttribute('data-theme-mode'),
+        accent: root.getAttribute('data-accent'),
+      },
+      mediaDark: !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches),
+    };
+  });
+}
+
+/** 场景启动守卫：v1.3.4 界面外观契约 */
+export async function ensureV134(ctx, page, label = 'v1.3.4 契约') {
+  const probe = await probeV134(page);
+  ctx.evidence.v134Probe = probe;
+  ctx.check(`${label}：应用版本 >= 1.3.4（当前 ${probe.version || 'unknown'}）`,
+    /^1\.(?:3\.[4-9]|[4-9]\.|[1-9]\d)|^[2-9]\./.test(String(probe.version || '')), probe.version);
+  ctx.check(`${label}：外观 API 齐全（setAppearance/getAppearance/FP.appearance）`,
+    probe.hasSetAppearance && probe.hasGetAppearance && probe.hasFpAppearance,
+    { set: probe.hasSetAppearance, get: probe.hasGetAppearance, fp: probe.hasFpAppearance });
+  ctx.check(`${label}：theme.css 已加载（--accent CSS 变量存在）`,
+    probe.themeCssLoaded, probe.themeCssLoaded);
+  ctx.check(`${label}：#btn-appearance 与 #appearance-popover 存在`,
+    probe.buttonExists && probe.popoverExists,
+    { button: probe.buttonExists, popover: probe.popoverExists });
+  ctx.check(`${label}：模式按钮 3 个（light/dark/system）`,
+    JSON.stringify(probe.modes) === JSON.stringify(V134_MODES), probe.modes);
+  ctx.check(`${label}：主题色 7 个（blue..amber）且均有 aria-label`,
+    JSON.stringify(probe.accents) === JSON.stringify(V134_ACCENTS)
+      && probe.accentLabels.every((text) => !!text),
+    probe.accents);
+  ctx.check(`${label}：html 上 data-theme/data-theme-mode/data-accent 已设置`,
+    !!probe.html.theme && !!probe.html.mode && !!probe.html.accent, probe.html);
+  ctx.note('v1.3.4 界面外观契约探测（信息，非问题）', JSON.stringify(probe));
+  return probe.hasSetAppearance && probe.hasGetAppearance && probe.hasFpAppearance
+    && probe.themeCssLoaded && probe.buttonExists && probe.popoverExists
+    && probe.modes.length === 3 && probe.accents.length === 7;
+}
+
 
 
 

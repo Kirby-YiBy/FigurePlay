@@ -3962,6 +3962,14 @@
           heightPx: result.heightPx,
           bytes: result.bytes
         };
+      },
+      setAppearance: function (mode, accent) {
+        if (typeof accent === 'string') FP.appearance.setAccent(accent);
+        if (typeof mode === 'string') FP.appearance.setMode(mode);
+        return FP.appearance.get();
+      },
+      getAppearance: function () {
+        return FP.appearance.get();
       }
     };
     window.__FIGPLAY__ = api;

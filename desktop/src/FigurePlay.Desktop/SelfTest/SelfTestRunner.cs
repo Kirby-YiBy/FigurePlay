@@ -182,6 +182,10 @@ namespace FigurePlay.Desktop.SelfTest
                 JObject appVectorE2E = await RunAppVectorE2EAsync();
                 _report["appVectorE2E"] = appVectorE2E;
 
+                // 3.2.6) v1.3.4 外观主题冒烟（深色/主题色 + PNG 导出不受影响）
+                JObject appearanceSmoke = await RunAppearanceSmokeTestAsync();
+                _report["appearanceSmoke"] = appearanceSmoke;
+
                 // 3.3) PowerPoint 矢量 PDF 真实往返测试（真实 MATLAB EMF 或真实 Metafile）
                 JObject vectorPdf = await RunVectorPdfTestAsync();
                 _report["vectorPdf"] = vectorPdf;
@@ -250,6 +254,15 @@ namespace FigurePlay.Desktop.SelfTest
                     JObject lifecycle = _report["powerPointLifecycle"] as JObject;
                     failures.Add("PowerPoint 持久会话生命周期检查失败：" +
                                  (lifecycle == null ? "未生成报告" : (lifecycle.Value<string>("error") ?? "未知原因")));
+                }
+
+                bool appearanceSmokeOk = _report["appearanceSmoke"] is JObject &&
+                                              ((JObject)_report["appearanceSmoke"]).Value<bool>("ok");
+                if (!appearanceSmokeOk)
+                {
+                    JObject smoke = _report["appearanceSmoke"] as JObject;
+                    failures.Add("外观主题冒烟失败：" +
+                                 (smoke == null ? "未生成报告" : (smoke.Value<string>("error") ?? "未知原因")));
                 }
 
                 bool appVectorAvailable = appVectorE2E.Value<bool>("available");

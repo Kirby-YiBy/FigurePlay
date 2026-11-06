@@ -323,7 +323,7 @@
         'class': 'cell-selection-outline',
         x: r3(panel.x), y: r3(panel.y), width: r3(panel.w), height: r3(panel.h),
         rx: r3(Math.min(2, Math.min(panel.w, panel.h) * 0.05)),
-        fill: 'none', stroke: '#2563eb', 'stroke-width': 0.5,
+        fill: 'none', 'stroke-width': 0.5,
         'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none'
       }));
     });
@@ -334,7 +334,7 @@
           'class': 'cell-hover-outline',
           x: r3(panel.x), y: r3(panel.y), width: r3(panel.w), height: r3(panel.h),
           rx: r3(Math.min(2, Math.min(panel.w, panel.h) * 0.05)),
-          fill: 'none', stroke: '#60a5fa', 'stroke-width': 0.35,
+          fill: 'none', 'stroke-width': 0.35,
           'stroke-dasharray': '2.4 1.8', 'vector-effect': 'non-scaling-stroke',
           'pointer-events': 'none'
         }));
