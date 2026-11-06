@@ -11,8 +11,9 @@ using Newtonsoft.Json.Linq;
 namespace FigurePlay.Desktop.SelfTest
 {
     /// <summary>
-    /// 矢量 PDF 的可选白边裁剪（crop）测试：
-    /// spec.crop = {xMm,yMm,wMm,hMm} 时，输出 PDF 页面应等于 crop 尺寸，内容坐标相对原页面平移。
+    /// v1.3.2 宿主级 crop + trimMargin（安全边距）测试：
+    /// 实心填满画布的真实 EMF + stretch，crop=150×100mm；宿主会按 trimMargin 向四周扩展页面，
+    /// 因此输出页应为 (150+2m)×(100+2m) mm，且 pdftoppm 渲染后四边墨迹余量 ≈ m（±0.5mm）。
     /// </summary>
     internal sealed partial class SelfTestRunner
     {
@@ -28,40 +29,9 @@ namespace FigurePlay.Desktop.SelfTest
             const double cropW = 150;
             const double cropH = 100;
 
-            // 用“实心填满画布”的真实 EMF 做 crop 测试：PowerPoint 端 ink probe 无额外白边，
-            // 页面应保持 crop 尺寸；真实 MATLAB EMF 的内部白边会被宿主二次校正掉，不适合断言页尺寸。
             byte[] solidEmf = TestFigureFactory.CreateSolidEmfBytes();
             result["emfSource"] = "C# Metafile 录制（实心填满画布）";
             result["emfBytes"] = solidEmf.Length;
-
-            JObject cropSpec = (JObject)baseSpec.DeepClone();
-            cropSpec["crop"] = new JObject
-            {
-                ["xMm"] = cropX,
-                ["yMm"] = cropY,
-                ["wMm"] = cropW,
-                ["hMm"] = cropH,
-            };
-
-            // 面板与 crop 完全重合 + stretch，保证 ink 覆盖页面（不会被二次校正缩小）
-            JArray panels = cropSpec["panels"] as JArray;
-            if (panels != null && panels.Count > 0)
-            {
-                JObject panel = (JObject)panels[0];
-                panel["xMm"] = cropX;
-                panel["yMm"] = cropY;
-                panel["wMm"] = cropW;
-                panel["hMm"] = cropH;
-                panel["fit"] = "stretch";
-                panel["image"] = new JObject
-                {
-                    ["kind"] = "emf",
-                    ["base64"] = Convert.ToBase64String(solidEmf),
-                };
-            }
-
-            string requestId = "selftest-vector-crop-" + DateTime.Now.Ticks;
-            result["requestId"] = requestId;
             result["parentRequestId"] = parentRequestId;
             result["cropMm"] = new JObject
             {
@@ -71,107 +41,215 @@ namespace FigurePlay.Desktop.SelfTest
                 ["hMm"] = cropH,
             };
 
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            byte[] pdfBytes = await SendVectorPdfRequestAsync(cropSpec, requestId, 180);
-            stopwatch.Stop();
-            result["latencyMs"] = stopwatch.ElapsedMilliseconds;
-            result["pdfBytes"] = pdfBytes.Length;
+            JArray cases = new JArray();
+            result["cases"] = cases;
+            bool allOk = true;
+            string lastError = null;
 
-            if (pdfBytes.Length < 1000 ||
-                pdfBytes[0] != (byte)'%' || pdfBytes[1] != (byte)'P' ||
-                pdfBytes[2] != (byte)'D' || pdfBytes[3] != (byte)'F')
+            foreach (double marginMm in new[] { 1.0, 2.0 })
             {
-                throw new InvalidOperationException("crop 矢量 PDF 不是有效 PDF。");
-            }
-
-            string pdfPath = Path.Combine(_options.OutDir, "vector-pdf-crop-test.pdf");
-            File.WriteAllBytes(pdfPath, pdfBytes);
-            result["pdfPath"] = pdfPath;
-
-            JObject checks = new JObject();
-            result["checks"] = checks;
-
-            double expectedWidthPt = cropW / 25.4 * 72.0;
-            double expectedHeightPt = cropH / 25.4 * 72.0;
-            checks["expectedPageWidthPt"] = Math.Round(expectedWidthPt, 2);
-            checks["expectedPageHeightPt"] = Math.Round(expectedHeightPt, 2);
-            // 宿主二次墨迹校正可能把页面轻微缩小；实心 EMF 应几乎不缩，留 3mm 容差
-            double tolerancePt = 3.0 / 25.4 * 72.0 + 0.5;
-
-            string pdfinfoExe = FindPdfTool("pdfinfo");
-            string pdfimagesExe = FindPdfTool("pdfimages");
-
-            bool pageSizeOk = false;
-            if (!string.IsNullOrEmpty(pdfinfoExe))
-            {
-                string infoOutput = RunTool(pdfinfoExe, QuoteArgument(pdfPath), 30000);
-                checks["pdfinfoOutput"] = Shorten(infoOutput, 1200);
-                double widthPt;
-                double heightPt;
-                int pages;
-                if (TryParsePdfInfo(infoOutput, out widthPt, out heightPt, out pages))
+                JObject one = new JObject();
+                one["trimMarginMm"] = marginMm;
+                JObject checks = new JObject();
+                one["checks"] = checks;
+                try
                 {
-                    checks["pageWidthPt"] = Math.Round(widthPt, 2);
-                    checks["pageHeightPt"] = Math.Round(heightPt, 2);
-                    checks["pages"] = pages;
-                    // ±0.5mm ≈ ±1.42pt，留 2pt 容差
-                    pageSizeOk = pages == 1 &&
-                                 Math.Abs(widthPt - expectedWidthPt) <= tolerancePt &&
-                                 Math.Abs(heightPt - expectedHeightPt) <= tolerancePt;
-                }
-            }
+                    JObject cropSpec = (JObject)baseSpec.DeepClone();
+                    cropSpec["crop"] = new JObject
+                    {
+                        ["xMm"] = cropX,
+                        ["yMm"] = cropY,
+                        ["wMm"] = cropW,
+                        ["hMm"] = cropH,
+                    };
+                    cropSpec["trimMarginMm"] = marginMm;
+                    // 精确页尺寸测试不放标签，避免标签墨迹影响 ink bbox 断言
+                    cropSpec["labels"] = new JArray();
 
-            if (!pageSizeOk)
-            {
-                double widthPt;
-                double heightPt;
-                if (TryGetPdfMediaBox(pdfBytes, out widthPt, out heightPt))
+                    JArray panels = cropSpec["panels"] as JArray;
+                    if (panels == null || panels.Count == 0)
+                    {
+                        throw new InvalidOperationException("baseSpec 缺少 panels。");
+                    }
+
+                    JObject panel = (JObject)panels[0];
+                    panel["xMm"] = cropX;
+                    panel["yMm"] = cropY;
+                    panel["wMm"] = cropW;
+                    panel["hMm"] = cropH;
+                    panel["fit"] = "stretch";
+                    panel["image"] = new JObject
+                    {
+                        ["kind"] = "emf",
+                        ["base64"] = Convert.ToBase64String(solidEmf),
+                    };
+
+                    string requestId = "selftest-vector-crop-m" + marginMm.ToString("0") + "-" + DateTime.Now.Ticks;
+                    one["requestId"] = requestId;
+
+                    Stopwatch stopwatch = Stopwatch.StartNew();
+                    byte[] pdfBytes = await SendVectorPdfRequestAsync(cropSpec, requestId, 180);
+                    stopwatch.Stop();
+                    one["latencyMs"] = stopwatch.ElapsedMilliseconds;
+                    one["pdfBytes"] = pdfBytes.Length;
+
+                    if (pdfBytes.Length < 1000 ||
+                        pdfBytes[0] != (byte)'%' || pdfBytes[1] != (byte)'P' ||
+                        pdfBytes[2] != (byte)'D' || pdfBytes[3] != (byte)'F')
+                    {
+                        throw new InvalidOperationException("crop 矢量 PDF 不是有效 PDF。");
+                    }
+
+                    string pdfPath = Path.Combine(
+                        _options.OutDir,
+                        "vector-pdf-crop-trim" + marginMm.ToString("0") + "mm.pdf");
+                    File.WriteAllBytes(pdfPath, pdfBytes);
+                    one["pdfPath"] = pdfPath;
+
+                    double expectedWidthMm = cropW + 2.0 * marginMm;
+                    double expectedHeightMm = cropH + 2.0 * marginMm;
+                    checks["expectedPageWidthMm"] = expectedWidthMm;
+                    checks["expectedPageHeightMm"] = expectedHeightMm;
+
+                    string pdfinfoExe = FindPdfTool("pdfinfo");
+                    string pdfimagesExe = FindPdfTool("pdfimages");
+                    string pdftoppmExe = FindPdfTool("pdftoppm");
+
+                    // 页面尺寸 = crop + 2*trimMargin（±0.5mm）
+                    bool pageSizeOk = false;
+                    if (!string.IsNullOrEmpty(pdfinfoExe))
+                    {
+                        string infoOutput = RunTool(pdfinfoExe, QuoteArgument(pdfPath), 30000);
+                        checks["pdfinfoOutput"] = Shorten(infoOutput, 1400);
+                        double widthPt;
+                        double heightPt;
+                        int pages;
+                        if (TryParsePdfInfo(infoOutput, out widthPt, out heightPt, out pages))
+                        {
+                            double widthMm = widthPt / 72.0 * 25.4;
+                            double heightMm = heightPt / 72.0 * 25.4;
+                            checks["pageWidthPt"] = Math.Round(widthPt, 2);
+                            checks["pageHeightPt"] = Math.Round(heightPt, 2);
+                            checks["pageWidthMm"] = Math.Round(widthMm, 2);
+                            checks["pageHeightMm"] = Math.Round(heightMm, 2);
+                            checks["pages"] = pages;
+                            pageSizeOk = pages == 1 &&
+                                         Math.Abs(widthMm - expectedWidthMm) <= 0.8 &&
+                                         Math.Abs(heightMm - expectedHeightMm) <= 0.8;
+                        }
+                    }
+
+                    checks["pageSizeOk"] = pageSizeOk;
+                    if (!pageSizeOk)
+                    {
+                        throw new InvalidOperationException(
+                            "crop+trimMargin 页面尺寸不符：期望 " + expectedWidthMm + "×" +
+                            expectedHeightMm + "mm。");
+                    }
+
+                    // 无位图
+                    bool noBitmaps = false;
+                    if (!string.IsNullOrEmpty(pdfimagesExe))
+                    {
+                        string listOutput = RunTool(pdfimagesExe, "-list " + QuoteArgument(pdfPath), 60000);
+                        checks["pdfimagesList"] = Shorten(listOutput, 1200);
+                        int imageRows = CountPdfImageRows(listOutput);
+                        checks["imageCount"] = imageRows;
+                        checks["imageCheckMode"] = "pdfimages";
+                        noBitmaps = imageRows == 0;
+                    }
+
+                    if (!noBitmaps)
+                    {
+                        int rawCount;
+                        int inflatedCount;
+                        ScanPdfForImageXObjects(pdfBytes, out rawCount, out inflatedCount);
+                        checks["managedImageXObjectCount"] = rawCount + inflatedCount;
+                        noBitmaps = (rawCount + inflatedCount) == 0;
+                    }
+
+                    checks["noBitmaps"] = noBitmaps;
+                    if (!noBitmaps)
+                    {
+                        throw new InvalidOperationException("crop+trimMargin PDF 中检测到位图图像。");
+                    }
+
+                    // pdftoppm 渲染后四边余量 ≈ trimMargin
+                    if (string.IsNullOrEmpty(pdftoppmExe))
+                    {
+                        throw new InvalidOperationException("缺少 pdftoppm，无法验证渲染后墨迹余量。");
+                    }
+
+                    string renderPrefix = Path.Combine(
+                        _options.OutDir,
+                        "vector-pdf-crop-trim" + marginMm.ToString("0") + "mm");
+                    string renderPng = renderPrefix + ".png";
+                    if (File.Exists(renderPng))
+                    {
+                        File.Delete(renderPng);
+                    }
+
+                    RunTool(pdftoppmExe, "-r 150 -png -singlefile " + QuoteArgument(pdfPath) + " " + QuoteArgument(renderPrefix), 120000);
+                    if (!File.Exists(renderPng))
+                    {
+                        throw new InvalidOperationException("pdftoppm 未生成渲染 PNG。");
+                    }
+
+                    double leftMm;
+                    double topMm;
+                    double rightMm;
+                    double bottomMm;
+                    int renderWidth;
+                    int renderHeight;
+                    bool measured = MeasureWhiteMargins(
+                        renderPng,
+                        150.0 / 25.4,
+                        out leftMm,
+                        out topMm,
+                        out rightMm,
+                        out bottomMm,
+                        out renderWidth,
+                        out renderHeight);
+                    checks["marginCheckMode"] = "pdftoppm+pixels";
+                    checks["renderPngPath"] = renderPng;
+                    if (!measured)
+                    {
+                        throw new InvalidOperationException("crop+trimMargin 渲染后为全白页面。");
+                    }
+
+                    checks["leftMarginMm"] = Math.Round(leftMm, 2);
+                    checks["topMarginMm"] = Math.Round(topMm, 2);
+                    checks["rightMarginMm"] = Math.Round(rightMm, 2);
+                    checks["bottomMarginMm"] = Math.Round(bottomMm, 2);
+                    double maxDeviation = Math.Max(
+                        Math.Max(Math.Abs(leftMm - marginMm), Math.Abs(topMm - marginMm)),
+                        Math.Max(Math.Abs(rightMm - marginMm), Math.Abs(bottomMm - marginMm)));
+                    checks["marginDeviationMaxMm"] = Math.Round(maxDeviation, 2);
+                    if (maxDeviation > 0.55)
+                    {
+                        throw new InvalidOperationException(
+                            "crop+trimMargin 渲染余量偏离 " + marginMm + "mm 超过 0.5mm。");
+                    }
+
+                    one["ok"] = true;
+                }
+                catch (Exception ex)
                 {
-                    checks["mediaBoxWidthPt"] = Math.Round(widthPt, 2);
-                    checks["mediaBoxHeightPt"] = Math.Round(heightPt, 2);
-                    pageSizeOk = Math.Abs(widthPt - expectedWidthPt) <= tolerancePt &&
-                                 Math.Abs(heightPt - expectedHeightPt) <= tolerancePt;
+                    one["ok"] = false;
+                    one["error"] = ex.Message;
+                    allOk = false;
+                    lastError = ex.Message;
                 }
+
+                cases.Add(one);
             }
 
-            checks["pageSizeOk"] = pageSizeOk;
-            if (!pageSizeOk)
+            result["ok"] = allOk;
+            if (!allOk)
             {
-                throw new InvalidOperationException(
-                    "crop 矢量 PDF 页面尺寸不符：期望 " + Math.Round(expectedWidthPt, 2) + " x " +
-                    Math.Round(expectedHeightPt, 2) + " pt（" + cropW + " x " + cropH + " mm）。");
+                result["error"] = lastError;
             }
 
-            bool noBitmaps = false;
-            if (!string.IsNullOrEmpty(pdfimagesExe))
-            {
-                string listOutput = RunTool(pdfimagesExe, "-list " + QuoteArgument(pdfPath), 60000);
-                checks["pdfimagesList"] = Shorten(listOutput, 1500);
-                int imageRows = CountPdfImageRows(listOutput);
-                checks["imageCount"] = imageRows;
-                checks["imageCheckMode"] = "pdfimages";
-                noBitmaps = imageRows == 0;
-            }
-
-            if (!noBitmaps)
-            {
-                int rawCount;
-                int inflatedCount;
-                ScanPdfForImageXObjects(pdfBytes, out rawCount, out inflatedCount);
-                checks["managedImageXObjectCount"] = rawCount + inflatedCount;
-                checks["imageCheckMode"] = string.IsNullOrEmpty(pdfimagesExe)
-                    ? "managed"
-                    : "pdfimages+managed";
-                noBitmaps = (rawCount + inflatedCount) == 0;
-            }
-
-            checks["noBitmaps"] = noBitmaps;
-            if (!noBitmaps)
-            {
-                throw new InvalidOperationException("crop 矢量 PDF 中检测到位图图像。");
-            }
-
-            result["ok"] = true;
             return result;
         }
 
@@ -197,7 +275,7 @@ namespace FigurePlay.Desktop.SelfTest
                            JsonConvert.ToString(requestId) + ") {" +
                            "       if (o.ok && o.base64) { try { window.__figplayVectorPdfCropB64 = String(o.base64); } catch (e) {} }" +
                            "       return JSON.stringify({ found: true, ok: !!o.ok, bytes: o.bytes || 0," +
-                           "         error: o.error || '' }); } } catch (e) {} }" +
+                           "         error: o.error || '', diagnostics: o.diagnostics || [] }); } } catch (e) {} }" +
                            " return JSON.stringify({ found: false, count: a.length }); })()";
 
             JObject found = null;

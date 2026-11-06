@@ -118,11 +118,12 @@
         </label>
       </div>
       <div class="field-row">
-        <label class="field field-inline"><span>列间距</span><input type="number" id="col-gap" min="0" max="80" step="0.5" value="2"><span class="unit">mm</span></label>
+        <label class="field field-inline"><span>列间距</span><input type="number" id="col-gap" min="-50" max="80" step="0.5" value="2"><span class="unit">mm</span></label>
       </div>
       <div class="field-row">
-        <label class="field field-inline"><span>行间距</span><input type="number" id="row-gap" min="0" max="80" step="0.5" value="2"><span class="unit">mm</span></label>
+        <label class="field field-inline"><span>行间距</span><input type="number" id="row-gap" min="-50" max="80" step="0.5" value="2"><span class="unit">mm</span></label>
       </div>
+      <p class="grid-hint">间距支持负值（-50～80 mm）：图片自带白边时可设为负值让子图更紧凑/轻微重叠。</p>
       <div class="field-row">
         <label class="field field-inline"><span>外边距</span><input type="number" id="margin-input" min="0" max="80" step="0.5" value="0"><span class="unit">mm</span></label>
       </div>
@@ -435,6 +436,7 @@
         <input type="number" id="pdf-trim-margin" min="0" max="20" step="0.5" value="0" inputmode="decimal">
         <span class="unit">mm</span>
       </label>
+      <p class="grid-hint" id="pdf-trim-safety-hint" hidden>0 mm 会保留约 1 mm 的防裁字安全边距，避免底部编号边缘被裁掉；需要更紧可先试 1 mm 以外的自定义值。</p>
       <label class="check-row" id="transparent-row">
         <input type="checkbox" id="transparent-toggle">
         <span>透明背景<span class="check-sub">（仅 PNG / SVG）</span></span>
@@ -464,8 +466,8 @@
       <li>点击预览中的空子图会弹出「粘贴小画布」：按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 直接粘贴 MATLAB 图窗 / 截图，也可以拖入文件或选择本地图片。</li>
       <li>按住 <kbd>Ctrl</kbd>/<kbd>Shift</kbd> 点击多个子图可多选，再合并成跨列大图（如 2×3 首行跨 3 列），或批量套用编号。</li>
       <li>顶部「＋ 新页 / 复制页 / 删除页」可建立多页图集；双击页签改名，导出时可选当前页或全部页。</li>
-      <li>网格行/列可直接输入（1–500，单页最多 2500 格）；编号超出页面时会自动加页距，也可关闭自动后手动填四边页距。</li>
-      <li>导出时可勾选「自动裁剪 PDF 白边」（按实际内容墨迹裁剪，类似 pdfcrop）；滑块旁的百分比/数值框都可以直接输入。</li>
+      <li>网格行/列可直接输入（1–500，单页最多 2500 格）；编号超出页面时会自动加页距，也可关闭自动后手动填四边页距。列/行间距支持负值（-50～80 mm），可抵消图片自带的白边。</li>
+      <li>导出时可勾选「自动裁剪 PDF 白边」（按实际内容墨迹裁剪，类似 pdfcrop；0 mm 会保留约 1 mm 防裁字安全边距）；滑块旁的百分比/数值框都可以直接输入。</li>
       <li>左侧「子图分组」可把若干子图编为一组，每组使用独立编号方案与起始号（如 A 组 (a)(b)、B 组 (i)(ii)）。</li>
       <li>在右侧设置编号样式、统一位置、字体字号；最后选择导出格式与 DPI。改错了随时 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销。</li>
     </ol>

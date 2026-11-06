@@ -24,6 +24,13 @@ namespace FigurePlay.Desktop.Bridge
 
         public double CropHmm { get; set; }
 
+        /// <summary>
+        /// v1.3.2：裁剪后保留的安全边距（mm，0–20，默认 1）。应用对用户“裁剪留边”取
+        /// max(1, 用户值) 后通过 spec.trimMarginMm 传入；宿主二次墨迹校正以“实际 ink bbox + 该边距”
+        /// 为目标，避免把底部编号等贴边内容裁掉。
+        /// </summary>
+        public double TrimMarginMm { get; set; } = 1.0;
+
         public double EffectiveWidthMm
         {
             get { return HasCrop ? CropWmm : WidthMm; }
@@ -73,6 +80,7 @@ namespace FigurePlay.Desktop.Bridge
             result.WidthMm = widthMm;
             result.HeightMm = heightMm;
             result.Background = GetString(json, "background", "#ffffff");
+            result.TrimMarginMm = Math.Max(0, Math.Min(20, GetDouble(json, "trimMarginMm", 1.0)));
 
             // 可选白边裁剪：crop 无效（越界/过小）时静默忽略，输出整页
             JObject crop = json["crop"] as JObject;

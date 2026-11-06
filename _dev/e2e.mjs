@@ -49,7 +49,8 @@ const finalV11 = argv.includes('--final-v11');
 const finalV12 = argv.includes('--final-v12');
 const finalV13 = argv.includes('--final-v13');
 const finalV131 = argv.includes('--final-v131');
-const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131;
+const finalV132 = argv.includes('--final-v132');
+const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131 || finalV132;
 const suiteArg = argv.find((item) => item.startsWith('--suite='));
 const suite = suiteArg ? suiteArg.slice('--suite='.length) : 'all';
 const onlyArg = argv.find((item) => item.startsWith('--only='));
@@ -71,28 +72,33 @@ if (!SUITES[suite]) {
   console.error(`未知 suite: ${suite}（可选 v10 / v11 / v12 / v13 / all）`);
   process.exit(2);
 }
-const finalNaming = finalV131
+const finalNaming = finalV132
   ? {
-    reportName: 'report-v1.3.1.md', shotsName: 'screens-v1.3.1', title: '（v1.3.1）',
-    keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v131',
+    reportName: 'report-v1.3.2.md', shotsName: 'screens-v1.3.2', title: '（v1.3.2）',
+    keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v132',
   }
-  : (finalV13
+  : (finalV131
     ? {
-      reportName: 'report-v1.3.md', shotsName: 'screens-v1.3', title: '（v1.3）',
-      keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v13',
+      reportName: 'report-v1.3.1.md', shotsName: 'screens-v1.3.1', title: '（v1.3.1）',
+      keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v131',
     }
-    : (finalV12
+    : (finalV13
       ? {
-        reportName: 'report-v1.2.md', shotsName: 'screens-v1.2', title: '（v1.2）',
-        keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v12',
+        reportName: 'report-v1.3.md', shotsName: 'screens-v1.3', title: '（v1.3）',
+        keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v13',
       }
-      : (finalV11
+      : (finalV12
         ? {
-          reportName: 'report-v1.1.md', shotsName: 'shots-v1.1', exportsName: 'exports-v1.1', title: '（v1.1）',
+          reportName: 'report-v1.2.md', shotsName: 'screens-v1.2', title: '（v1.2）',
+          keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v12',
         }
-        : {
-          reportName: 'report.md', shotsName: 'shots', exportsName: 'exports', title: '',
-        })));
+        : (finalV11
+          ? {
+            reportName: 'report-v1.1.md', shotsName: 'shots-v1.1', exportsName: 'exports-v1.1', title: '（v1.1）',
+          }
+          : {
+            reportName: 'report.md', shotsName: 'shots', exportsName: 'exports', title: '',
+          }))));
 
 const log = (...args) => console.log(...args);
 const section = (title) => log(`\n=== ${title} ===`);
@@ -162,7 +168,7 @@ function scenarioMatches(scenario, selector) {
   const name = scenario.name.toUpperCase();
   return selector.some((item) => {
     const token = item.toUpperCase();
-    if (/^[A-U]$/.test(token)) return code === token; // 单字母只按场景代号精确匹配
+    if (/^[A-V]$/.test(token)) return code === token; // 单字母只按场景代号精确匹配
     return code === token || name === token || name.startsWith(token);
   });
 }
@@ -236,7 +242,7 @@ async function writeFinalReport(summary, runDir, naming = {}) {
   let prunedExports = 0;
   if (keepExportsInRun) {
     // E: 盘空间有限：只保留关键导出样例（各格式主样例 + 合并/分组/多页证据）
-    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v12-|^fp-v13-|^fp-v131-)/;
+    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v12-|^fp-v132-)/;
     for (const file of walkFiles(exportsSourceDir)) {
       if (keepExportRe.test(path.basename(file))) continue;
       try {
@@ -438,7 +444,12 @@ async function writeFinalReport(summary, runDir, naming = {}) {
         return Math.max(margins.top, margins.right, margins.bottom, margins.left);
       };
       const lb = trim.letterbox || {};
-      lines.push(`- S PDF 墨迹裁剪：整页 ${round(trim.geom.w, 2)}×${round(trim.geom.h, 2)}mm；内容盒 ${round(trim.contentBox.wMm, 2)}×${round(trim.contentBox.hMm, 2)}mm → ink ${round(trim.inkBox.wMm, 2)}×${round(trim.inkBox.hMm, 2)}mm；留边0 四边最大余量 ${maxMargin(trim.trim0 && trim.trim0.marginsMm)}mm、留边2mm 最大 ${maxMargin(trim.trim2 && trim.trim2.marginsMm)}mm；letterbox ink ${lb.ink ? round(lb.ink.wMm, 2) + '×' + round(lb.ink.hMm, 2) + 'mm' : '-'}，裁剪后四边 ≤1.5mm`);
+      const safe = trim.labelSafe || {};
+      lines.push(`- S PDF 墨迹裁剪（v1.3.2 安全边距）：整页 ${round(trim.geom.w, 2)}×${round(trim.geom.h, 2)}mm；内容盒 ${round(trim.contentBox.wMm, 2)}×${round(trim.contentBox.hMm, 2)}mm → ink ${round(trim.inkBox.wMm, 2)}×${round(trim.inkBox.hMm, 2)}mm；trim0(→1mm) 最大余量 ${maxMargin(trim.trim0 && trim.trim0.marginsMm)}mm、trim2 最大 ${maxMargin(trim.trim2 && trim.trim2.marginsMm)}mm；letterbox ink ${lb.ink ? round(lb.ink.wMm, 2) + '×' + round(lb.ink.hMm, 2) + 'mm' : '-'}；用户配置(3×2/bc/offsetY5) trim0 余量 ${JSON.stringify(safe.margins0 || null)}、trim2 余量 ${JSON.stringify(safe.margins2 || null)}（底部编号完整）`);
+    }
+    if (scenario.code === 'V' && evidence.negativeGap) {
+      const neg = evidence.negativeGap;
+      lines.push(`- V 负间距：gap 0→${JSON.stringify(neg.negative.gap)}，cellW ${round(neg.base.cellW, 2)}→${round(neg.negative.cellW, 2)}mm，面板重叠 X=${round(neg.negative.overlapX, 2)}mm / Y=${round(neg.negative.overlapY, 2)}mm；clamp=${JSON.stringify(neg.clamped && [neg.clamped.colGap, neg.clamped.rowGap])}；PNG/PDF/trim 导出均通过（trim 余量 ${JSON.stringify(neg.exports.trim && neg.exports.trim.margins)}）`);
     }
     if (scenario.code === 'T' && evidence.rangeNums) {
       lines.push(`- T 数字输入：zoom=${evidence.rangeNums.state.zoom}、jpgQuality=${evidence.rangeNums.state.jpgQuality}、bgOpacity=${evidence.rangeNums.state.bgOpacity}（夹取/双向同步通过）`);
@@ -447,7 +458,7 @@ async function writeFinalReport(summary, runDir, naming = {}) {
       const panels = evidence.vectorPdf.spec.panels.map((item) => item.kind).join(',');
       const trimCrop = evidence.vectorPdf.trimCrop;
       const ink = evidence.vectorPdf.inkCrop;
-      lines.push(`- U EMF 矢量 PDF：emfCount=${evidence.vectorPdf.vectorStatus.emfCount}，spec panels=[${panels}]、labels=${evidence.vectorPdf.spec.labels.length}；trim spec.crop=${trimCrop ? `${round(trimCrop.wMm, 2)}×${round(trimCrop.hMm, 2)}mm` : '无'}（≈getInkCropBox ${ink ? `${round(ink.wMm, 2)}×${round(ink.hMm, 2)}mm` : ''}）；mock 成功写入/失败回退位图均通过`);
+      lines.push(`- U EMF 矢量 PDF：emfCount=${evidence.vectorPdf.vectorStatus.emfCount}，spec panels=[${panels}]、labels=${evidence.vectorPdf.spec.labels.length}；trim spec.crop=${trimCrop ? `${round(trimCrop.wMm, 2)}×${round(trimCrop.hMm, 2)}mm` : '无'}（≈getInkCropBox ${ink ? `${round(ink.wMm, 2)}×${round(ink.hMm, 2)}mm` : ''}）、spec.trimMarginMm=${evidence.vectorPdf.trimMarginMm};mock 成功写入/失败回退位图均通过`);
     }
   }
 
@@ -466,12 +477,13 @@ async function writeFinalReport(summary, runDir, naming = {}) {
 
   lines.push('', '## 复现命令', '', '```powershell');
   lines.push(`# 完整 E2E（含报告与截图）`);
-  const finalCmd = finalV131 ? '--suite=all --final-v131'
-    : (finalV13 ? '--suite=all --final-v13'
-      : (finalV12 ? '--suite=all --final-v12' : (finalV11 ? '--final-v11' : '--final')));
+  const finalCmd = finalV132 ? '--suite=all --final-v132'
+    : (finalV131 ? '--suite=all --final-v131'
+      : (finalV13 ? '--suite=all --final-v13'
+        : (finalV12 ? '--suite=all --final-v12' : (finalV11 ? '--final-v11' : '--final'))));
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} ${finalCmd}`);
-  lines.push(`# v1.3.1 全量（v1.0 回归 + v1.1 + v1.2 + v1.3 + v1.3.1 ink 裁剪）`);
-  lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v131`);
+  lines.push(`# v1.3.2 全量（v1.0 回归 + v1.1 + v1.2 + v1.3 + v1.3.1 + 安全边距/负间距）`);
+  lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v132`);
   lines.push(`# 只跑某场景 / suite`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --only=U`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=v13`);
@@ -545,7 +557,7 @@ async function main() {
   log(`FigurePlay E2E run ${runId}  [suite=${suite}: ${SUITES[suite].name}]`);
   log(`应用: ${APP_INDEX}  (源码版本 ${readAppVersionFromSource()})`);
   log(`场景: ${selected.map((scenario) => scenario.code).join(', ')}  (headless=${!headed})`);
-  const finalTargetText = finalV131 || finalV13 || finalV12
+  const finalTargetText = finalV132 || finalV131 || finalV13 || finalV12
     ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / run 内关键导出`
     : (finalMode ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / artifacts/${finalNaming.exportsName}/` : '');
   log(`产物: ${runDir}${finalTargetText}\n`);

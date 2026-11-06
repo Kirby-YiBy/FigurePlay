@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -39,8 +39,8 @@ namespace FigurePlay.Desktop.Bridge
         /// <summary>探针最大高度，避免极端长页面内存过大。</summary>
         private const int ProbeMaxHeightPx = 4000;
 
-        /// <summary>低于该白边阈值不再修正。</summary>
-        private const double MarginThresholdMm = 0.2;
+        /// <summary>四边墨迹余量相对目标 trimMargin 的允许误差（mm）。</summary>
+        private const double MarginToleranceMm = 0.5;
 
         /// <summary>最多修正次数（每次修正后重新探测）。</summary>
         private const int MaxCorrectionIterations = 2;
@@ -176,8 +176,15 @@ namespace FigurePlay.Desktop.Bridge
                     crop));
 
                 // 只有显式 crop（trim 模式）才做二次墨迹校正；整页导出保持原坐标。
+                // v1.3.2：目标不是“零白边”，而是“实际 ink bbox 四周保留 spec.trimMarginMm 安全边距”，
+                // 避免把底部编号等贴边内容裁掉（用户 trim=0 时应用会发送 max(1, 0)=1mm）。
                 if (spec.HasCrop)
                 {
+                    double targetMargin = spec.TrimMarginMm;
+                    result.Diagnostics.Add(string.Format(
+                        "trim target margin={0:0.##}mm",
+                        targetMargin));
+
                     for (int iteration = 0; iteration <= MaxCorrectionIterations; iteration++)
                     {
                         string probePath = Path.Combine(tempDir, "probe-" + iteration + ".png");
@@ -206,21 +213,23 @@ namespace FigurePlay.Desktop.Bridge
                         }
 
                         result.Diagnostics.Add(string.Format(
-                            "ink-probe iter{0}: crop={1} margins L={2:0.##} T={3:0.##} R={4:0.##} B={5:0.##}mm",
+                            "ink-probe iter{0}: crop={1} margins L={2:0.##} T={3:0.##} R={4:0.##} B={5:0.##}mm (target {6:0.##}mm)",
                             iteration,
                             crop,
                             leftMm,
                             topMm,
                             rightMm,
-                            bottomMm));
+                            bottomMm,
+                            targetMargin));
 
-                        bool needCorrection = leftMm > MarginThresholdMm ||
-                                              topMm > MarginThresholdMm ||
-                                              rightMm > MarginThresholdMm ||
-                                              bottomMm > MarginThresholdMm;
-                        if (!needCorrection)
+                        bool marginsOk =
+                            Math.Abs(leftMm - targetMargin) <= MarginToleranceMm &&
+                            Math.Abs(topMm - targetMargin) <= MarginToleranceMm &&
+                            Math.Abs(rightMm - targetMargin) <= MarginToleranceMm &&
+                            Math.Abs(bottomMm - targetMargin) <= MarginToleranceMm;
+                        if (marginsOk)
                         {
-                            result.Diagnostics.Add("白边已在阈值内，无需继续修正。");
+                            result.Diagnostics.Add("四边墨迹余量已在目标 trimMargin ±0.5mm 内，停止修正。");
                             break;
                         }
 
@@ -230,10 +239,23 @@ namespace FigurePlay.Desktop.Bridge
                             break;
                         }
 
-                        CropBox adjusted = AdjustCrop(crop, spec, leftMm, topMm, rightMm, bottomMm);
+                        CropBox adjusted = AdjustCrop(
+                            crop,
+                            spec,
+                            leftMm,
+                            topMm,
+                            rightMm,
+                            bottomMm,
+                            targetMargin);
                         if (adjusted == null)
                         {
                             result.Diagnostics.Add("修正后页面过小/越界，停止修正并保留当前 crop。");
+                            break;
+                        }
+
+                        if (CropEquals(crop, adjusted, 0.02))
+                        {
+                            result.Diagnostics.Add("crop 已收敛/受页面边界限制，停止修正。");
                             break;
                         }
 
@@ -844,35 +866,57 @@ namespace FigurePlay.Desktop.Bridge
             }
         }
 
+        /// <summary>
+        /// v1.3.2：由“当前 crop + 探针测得的四边白边”还原整页实际 ink bbox，再向四周扩展
+        /// trimMargin 安全边距（而不是裁到零白边）。超出原页面边界时按页面裁切，保证编号等贴边内容完整。
+        /// </summary>
         private static CropBox AdjustCrop(
             CropBox crop,
             VectorPdfSpec spec,
             double leftMm,
             double topMm,
             double rightMm,
-            double bottomMm)
+            double bottomMm,
+            double marginMm)
         {
-            double x = crop.X + leftMm;
-            double y = crop.Y + topMm;
-            double w = crop.W - leftMm - rightMm;
-            double h = crop.H - topMm - bottomMm;
-
-            if (w < MinPowerPointPageMm || h < MinPowerPointPageMm)
+            double inkX = crop.X + leftMm;
+            double inkY = crop.Y + topMm;
+            double inkW = crop.W - leftMm - rightMm;
+            double inkH = crop.H - topMm - bottomMm;
+            if (inkW <= 0.05 || inkH <= 0.05 ||
+                double.IsNaN(inkW) || double.IsNaN(inkH) ||
+                double.IsInfinity(inkW) || double.IsInfinity(inkH))
             {
                 return null;
             }
 
-            if (x < -0.001 || y < -0.001)
+            double newX = Math.Max(0, inkX - marginMm);
+            double newY = Math.Max(0, inkY - marginMm);
+            double newRight = Math.Min(spec.WidthMm, inkX + inkW + marginMm);
+            double newBottom = Math.Min(spec.HeightMm, inkY + inkH + marginMm);
+            double newW = newRight - newX;
+            double newH = newBottom - newY;
+
+            if (newW < MinPowerPointPageMm || newH < MinPowerPointPageMm)
             {
                 return null;
             }
 
-            if (x + w > spec.WidthMm + 0.001 || y + h > spec.HeightMm + 0.001)
+            if (double.IsNaN(newW) || double.IsNaN(newH) ||
+                double.IsInfinity(newW) || double.IsInfinity(newH))
             {
                 return null;
             }
 
-            return new CropBox { X = Math.Max(0, x), Y = Math.Max(0, y), W = w, H = h };
+            return new CropBox { X = newX, Y = newY, W = newW, H = newH };
+        }
+
+        private static bool CropEquals(CropBox a, CropBox b, double epsilonMm)
+        {
+            return Math.Abs(a.X - b.X) <= epsilonMm &&
+                   Math.Abs(a.Y - b.Y) <= epsilonMm &&
+                   Math.Abs(a.W - b.W) <= epsilonMm &&
+                   Math.Abs(a.H - b.H) <= epsilonMm;
         }
 
         // ---------------------------------------------------------------- 进程管理

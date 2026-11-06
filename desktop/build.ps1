@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.3.1-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.3.1-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.3.2-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.3.2-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -201,15 +201,22 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
             $appPageH = $report.appVectorE2E.checks.pageHeightPt
             Write-Info ("应用矢量 E2E  : ok={0} 页面={1}x{2}pt 位图数={3} 标签={4}（导入 {5} ms / 导出 {6} ms）" -f $report.appVectorE2E.ok, $appPageW, $appPageH, $report.appVectorE2E.checks.imageCount, $report.appVectorE2E.checks.labelTextOk, $report.appVectorE2E.importMs, $report.appVectorE2E.exportMs)
             if ($report.appVectorE2E.trim) {
-                $trimOk = $report.appVectorE2E.trim.ok
-                $trimW = $report.appVectorE2E.trim.checks.cropWidthMm
-                $trimH = $report.appVectorE2E.trim.checks.cropHeightMm
-                $trimMax = $report.appVectorE2E.trim.checks.maxMarginMm
-                $trimPW = $report.appVectorE2E.trim.checks.pageWidthPt
-                $trimPH = $report.appVectorE2E.trim.checks.pageHeightPt
-                $trimOutW = if ($trimPW) { [math]::Round($trimPW / 72 * 25.4, 1) } else { 0 }
-                $trimOutH = if ($trimPH) { [math]::Round($trimPH / 72 * 25.4, 1) } else { 0 }
-                Write-Info ("  墨迹裁剪 trim : ok={0} app crop={1}x{2}mm 输出={3}x{4}mm 白边max={5}mm 位图数={6}（{7} ms）" -f $trimOk, $trimW, $trimH, $trimOutW, $trimOutH, $trimMax, $report.appVectorE2E.trim.checks.imageCount, $report.appVectorE2E.trim.trimExportMs)
+                $trimObj = $report.appVectorE2E.trim
+                $trimOk = $trimObj.ok
+                $basic = $trimObj.basic
+                $bChecks = $basic.checks
+                Write-Info ("  trim 基础   : ok={0} 页={1}x{2}mm 余量 L/T/R/B={3}/{4}/{5}/{6}mm 位图={7}" -f $basic.ok, $bChecks.pageWidthMm, $bChecks.pageHeightMm, $bChecks.leftMarginMm, $bChecks.topMarginMm, $bChecks.rightMarginMm, $bChecks.bottomMarginMm, $bChecks.imageCount)
+                $lt0 = $trimObj.labelTrim0
+                if ($lt0) {
+                    $l0 = $lt0.checks
+                    Write-Info ("  编号 trim=0 : ok={0} 页={1}x{2}mm 余量 L/T/R/B={3}/{4}/{5}/{6}mm 底部编号墨迹={7}px 文本={8}" -f $lt0.ok, $l0.pageWidthMm, $l0.pageHeightMm, $l0.leftMarginMm, $l0.topMarginMm, $l0.rightMarginMm, $l0.bottomMarginMm, $l0.bottomLabelInkPixels, $l0.labelTextOk)
+                }
+                $lt2 = $trimObj.labelTrim2
+                if ($lt2) {
+                    $l2 = $lt2.checks
+                    Write-Info ("  编号 trim=2 : ok={0} 页={1}x{2}mm 余量 L/T/R/B={3}/{4}/{5}/{6}mm 底部编号墨迹={7}px 文本={8}" -f $lt2.ok, $l2.pageWidthMm, $l2.pageHeightMm, $l2.leftMarginMm, $l2.topMarginMm, $l2.rightMarginMm, $l2.bottomMarginMm, $l2.bottomLabelInkPixels, $l2.labelTextOk)
+                }
+                Write-Info ("  trim 汇总   : ok={0}" -f $trimOk)
             }
         }
         else {

@@ -389,6 +389,12 @@ namespace FigurePlay.Desktop.SelfTest
                 // ---------------- 可选白边裁剪（crop）测试 ----------------
                 JObject cropResult = await RunVectorPdfCropChecksAsync(emfBytes, spec, requestId);
                 result["crop"] = cropResult;
+                if (!cropResult.Value<bool>("ok"))
+                {
+                    throw new InvalidOperationException(
+                        "crop + trimMargin 测试失败：" +
+                        (cropResult.Value<string>("error") ?? "未知原因"));
+                }
 
                 result["ok"] = true;
             }

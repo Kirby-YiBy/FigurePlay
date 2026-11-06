@@ -424,12 +424,13 @@ const pdfTrimScenario = {
   code: 'S',
   name: 'pdf-trim',
   title: 'PDF按墨迹裁剪白边',
-  description: '默认 trimPdf=false；trim 改用实际墨迹 bbox（getInkCropBox）而非内容盒；四边渲染非白余量 ≤1.5mm（留边 0）；margin=10 与 letterbox 两种场景；trim on/off 尺寸对比；UI 读数改“按实际内容墨迹”',
+  description: '默认 trimPdf=false；trim 按实际墨迹+编号排版盒裁剪，trim=0 保留约 1mm 防裁字安全边距；用户配置 3×2/bc/inset1.5/offsetX1.2/offsetY5/Times9 复现并验证底部编号完整（0.7–1.6mm）；margin/letterbox/trim 0/1/2mm 对比；UI 读数“保留 x mm 安全边距”',
   async run(ctx) {
     const { page } = ctx;
     await app.openAppReady(page);
     if (!(await app.ensureV13(ctx, page))) return;
     if (!(await app.ensureV131(ctx, page))) return;
+    if (!(await app.ensureV132(ctx, page))) return;
     await app.api.clearAll(page);
     await app.api.setLayout(page, 2, 2);
     await app.setLayoutOptions(page, { margin: 10 });
@@ -470,23 +471,23 @@ const pdfTrimScenario = {
       && Math.abs(content2.hMm - (content0.hMm + 4)) < 0.3,
       { content0, content2 });
 
-    // 新：getInkCropBox 按实际非白墨迹，比内容盒更紧凑但不超出内容盒
-    const inkInsideContent = (ink) => ink.xMm >= content0.xMm - 0.6
-      && ink.yMm >= content0.yMm - 0.6
-      && ink.xMm + ink.wMm <= content0.xMm + content0.wMm + 0.6
-      && ink.yMm + ink.hMm <= content0.yMm + content0.hMm + 0.6;
-    const tighter = Math.max(content0.wMm - ink0.wMm, content0.hMm - ink0.hMm);
-    ctx.check('getInkCropBox 与 getCropBox 并存且 ink 在内容盒附近（±1mm）',
-      !!ink0 && ink0.wMm > 0 && ink0.hMm > 0 && inkInsideContent(ink0)
-      && Math.abs(ink0.wMm - content0.wMm) <= 1 && Math.abs(ink0.hMm - content0.hMm) <= 1,
-      { content: content0, ink: ink0 });
-    ctx.check('margin 场景 ink≈内容盒（图片填满面板；letterbox 场景另行验证更紧凑）',
-      Math.abs(ink0.wMm - content0.wMm) <= 1 && Math.abs(ink0.hMm - content0.hMm) <= 1,
-      { content: [content0.wMm, content0.hMm], ink: [ink0.wMm, ink0.hMm], tighter });
-    ctx.check('ink margin 外扩 ±2mm（宽高各 +4mm 左右）',
-      Math.abs(ink2.wMm - (ink0.wMm + 4)) < 0.8
-      && Math.abs(ink2.hMm - (ink0.hMm + 4)) < 0.8,
-      { ink0, ink2 });
+    // v1.3.2：ink crop 已并入编号排版盒并强制 ≥1mm 安全边距（0→1mm）
+    ctx.check('trim=0 时 getInkCropBox().marginMm=1（安全边距）',
+      ink0.marginMm === 1 && ink2.marginMm === 2,
+      { ink0Margin: ink0.marginMm, ink2Margin: ink2.marginMm });
+    ctx.check('getInkCropBox 与 getCropBox 并存且 ink 在整页内（含编号盒/安全边距）',
+      !!ink0 && ink0.wMm > 0 && ink0.hMm > 0
+      && ink0.xMm >= 0 && ink0.yMm >= 0
+      && ink0.xMm + ink0.wMm <= geom.widthMm + 0.1
+      && ink0.yMm + ink0.hMm <= geom.heightMm + 0.1,
+      { geom: { w: geom.widthMm, h: geom.heightMm }, ink: ink0 });
+    ctx.check('margin 场景 ink 与内容盒接近（±3mm，含编号盒与 1mm 安全边距）',
+      Math.abs(ink0.wMm - content0.wMm) <= 3 && Math.abs(ink0.hMm - content0.hMm) <= 3,
+      { content: [content0.wMm, content0.hMm], ink: [ink0.wMm, ink0.hMm] });
+    ctx.check('ink margin 0→2mm 时裁剪框每边约扩 1mm（宽高各 +2mm 左右）',
+      Math.abs(ink2.wMm - (ink0.wMm + 2)) < 1.0
+      && Math.abs(ink2.hMm - (ink0.hMm + 2)) < 1.0,
+      { ink0: [ink0.wMm, ink0.hMm], ink2: [ink2.wMm, ink2.hMm] });
     ctx.check('getInkCropBox 返回像素探针信息（inkPx/pagePx）',
       !!ink0.inkPx && !!ink0.pagePx && ink0.inkPx.w > 0 && ink0.pagePx.w > 0,
       { inkPx: ink0.inkPx, pagePx: ink0.pagePx });
@@ -498,9 +499,13 @@ const pdfTrimScenario = {
       exp.exportOptions.trimPdf === true && exp.exportOptions.trimMarginMm === 0
       && exp.ui.pdfTrimChecked === true && exp.ui.pdfTrimMarginRowVisible === true,
       { exportOptions: exp.exportOptions, ui: exp.ui });
-    ctx.check('UI 读数改为「按实际内容墨迹」新文案（保留 0 mm）',
+    ctx.check('trim=0 显示安全边距提示（#pdf-trim-safety-hint）',
+      exp.ui.pdfTrimSafetyHintVisible === true
+      && /1\s*mm|安全边距/.test(exp.ui.pdfTrimSafetyHint || ''),
+      { visible: exp.ui.pdfTrimSafetyHintVisible, hint: exp.ui.pdfTrimSafetyHint });
+    ctx.check('UI 读数按实际内容墨迹 + 保留 1 mm 安全边距',
       /按实际内容墨迹/.test(exp.ui.exportReadout || '')
-      && /保留\s*0(?:\.0)?\s*mm/.test(exp.ui.exportReadout || ''),
+      && /保留\s*1(?:\.0)?\s*mm\s*安全边距/.test(exp.ui.exportReadout || ''),
       exp.ui.exportReadout);
 
     const trim0 = await app.exportToFile(page, 'pdf', {
@@ -509,23 +514,23 @@ const pdfTrimScenario = {
     const trim0Verify = verifyExport('pdf', trim0.path, {
       expectWidthMm: round(ink0.wMm), expectHeightMm: round(ink0.hMm), expectPages: 1,
       renderDir: path.join(ctx.exportsDir, 'pdf-render'), renderPrefix: 'fp-v131-margin-trim',
-      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 1.5, inkTolerance: 14,
+      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 1.6, inkTolerance: 14,
     });
     const trim0Details = (trim0Verify.report && trim0Verify.report.details) || {};
     const trim0Margins = trim0Details.inkMarginsMm || null;
     addExportEvidence(ctx, {
-      label: 'PDF 墨迹裁剪（margin=10，留边0）', format: 'pdf', filename: trim0.filename,
+      label: 'PDF 墨迹裁剪（margin=10，留边0→1mm安全边距）', format: 'pdf', filename: trim0.filename,
       path: trim0.path, size: trim0.size, verifierOk: trim0Verify.ok,
       failedChecks: trim0Verify.failedChecks, verifier: trim0Verify.report,
     });
-    ctx.check('墨迹裁剪 PDF：MediaBox=ink bbox（±1mm）且四边墨迹 ≤1.5mm',
+    ctx.check('墨迹裁剪 PDF：MediaBox=ink bbox（±1mm）且四边墨迹 ≤1.6mm',
       trim0Verify.ok, describeVerify(trim0Verify));
     ctx.check('墨迹裁剪 PDF 页数=1（pdfinfo）',
       trim0Details.pageCount === 1 && trim0Details.pageCountSource === 'pdfinfo',
       trim0Details && { pageCount: trim0Details.pageCount, source: trim0Details.pageCountSource });
-    ctx.check('渲染实测四边墨迹余量均 ≤1.5mm（留边 0）',
+    ctx.check('trim=0 渲染四边墨迹余量约 1mm（0.7–1.6mm 安全边距）',
       !!trim0Margins && ['top', 'right', 'bottom', 'left']
-        .every((side) => trim0Margins[side] <= 1.5),
+        .every((side) => trim0Margins[side] >= 0.7 && trim0Margins[side] <= 1.6),
       trim0Margins);
     ctx.check('留边 0 时 ink 尺寸明显小于整页（宽高都变小）',
       ink0.wMm < geom.widthMm - 10 && ink0.hMm < geom.heightMm - 10,
@@ -539,7 +544,7 @@ const pdfTrimScenario = {
     const trim2Verify = verifyExport('pdf', trim2.path, {
       expectWidthMm: round(ink2.wMm), expectHeightMm: round(ink2.hMm), expectPages: 1,
       renderDir: path.join(ctx.exportsDir, 'pdf-render'), renderPrefix: 'fp-v131-margin-trim2',
-      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 3.2, inkTolerance: 14,
+      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 2.8, inkTolerance: 14,
     });
     const trim2Details = (trim2Verify.report && trim2Verify.report.details) || {};
     const trim2Margins = trim2Details.inkMarginsMm || null;
@@ -548,11 +553,11 @@ const pdfTrimScenario = {
       path: trim2.path, size: trim2.size, verifierOk: trim2Verify.ok,
       failedChecks: trim2Verify.failedChecks, verifier: trim2Verify.report,
     });
-    ctx.check('留边 2mm：MediaBox=ink(2)（±1mm）且四边余量 ≤3.2mm',
+    ctx.check('留边 2mm：MediaBox=ink(2)（±1mm）且四边余量 ≤2.8mm',
       trim2Verify.ok, describeVerify(trim2Verify));
-    ctx.check('留边 2mm：渲染四边余量在 1.2–3.2mm 之间',
+    ctx.check('留边 2mm：渲染四边余量约 2mm（1.4–2.6mm）',
       !!trim2Margins && ['top', 'right', 'bottom', 'left'].every((side) =>
-        trim2Margins[side] >= 1.2 && trim2Margins[side] <= 3.2),
+        trim2Margins[side] >= 1.4 && trim2Margins[side] <= 2.6),
       trim2Margins);
 
     // UI 导出同样按 ink（下载路径）
@@ -563,7 +568,7 @@ const pdfTrimScenario = {
     const uiVerify = verifyExport('pdf', uiSaved.path, {
       expectWidthMm: round(ink2.wMm), expectHeightMm: round(ink2.hMm), expectPages: 1,
       renderDir: path.join(ctx.exportsDir, 'pdf-render'), renderPrefix: 'fp-v131-ui-trim',
-      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 3.2, inkTolerance: 14,
+      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 2.8, inkTolerance: 14,
     });
     const uiMargins = ((uiVerify.report && uiVerify.report.details) || {}).inkMarginsMm || null;
     addExportEvidence(ctx, {
@@ -574,9 +579,9 @@ const pdfTrimScenario = {
     ctx.check('UI 导出 PDF 同样按 ink 裁剪（下载成功、尺寸/余量正确）',
       /\.pdf$/i.test(uiSaved.suggestedFilename) && uiSaved.size > 0 && uiVerify.ok,
       { filename: uiSaved.suggestedFilename, size: uiSaved.size, verifier: describeVerify(uiVerify) });
-    ctx.check('UI 裁剪 PDF 四边实测余量在 1.2–3.2mm',
+    ctx.check('UI 裁剪 PDF 四边实测余量约 2mm（1.4–2.6mm）',
       !!uiMargins && ['top', 'right', 'bottom', 'left'].every((side) =>
-        uiMargins[side] >= 1.2 && uiMargins[side] <= 3.2),
+        uiMargins[side] >= 1.4 && uiMargins[side] <= 2.6),
       uiMargins);
 
     // trim 关闭：整页尺寸 + 白边保留（margin=10 → 四边余量 ≥5mm）
@@ -636,7 +641,7 @@ const pdfTrimScenario = {
     const lbTrimVerify = verifyExport('pdf', lbTrim.path, {
       expectWidthMm: round(inkL.wMm), expectHeightMm: round(inkL.hMm), expectPages: 1,
       renderDir: path.join(ctx.exportsDir, 'pdf-render'), renderPrefix: 'fp-v131-letterbox-trim',
-      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 1.5, inkTolerance: 14,
+      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 1.6, inkTolerance: 14,
     });
     const lbTrimDetails = (lbTrimVerify.report && lbTrimVerify.report.details) || {};
     const lbTrimMargins = lbTrimDetails.inkMarginsMm || null;
@@ -645,11 +650,13 @@ const pdfTrimScenario = {
       path: lbTrim.path, size: lbTrim.size, verifierOk: lbTrimVerify.ok,
       failedChecks: lbTrimVerify.failedChecks, verifier: lbTrimVerify.report,
     });
-    ctx.check('letterbox trim：MediaBox=ink bbox（±1mm）且四边墨迹 ≤1.5mm',
+    ctx.check('letterbox trim：MediaBox=ink bbox（±1mm）且四边墨迹 ≤1.6mm',
       lbTrimVerify.ok, describeVerify(lbTrimVerify));
-    ctx.check('letterbox trim：渲染四边墨迹余量均 ≤1.5mm',
+    ctx.check('letterbox trim：渲染四边余量 ≤1.6mm（左右约 1mm；上下因图片填满页高可为 0）',
       !!lbTrimMargins && ['top', 'right', 'bottom', 'left']
-        .every((side) => lbTrimMargins[side] <= 1.5), lbTrimMargins);
+        .every((side) => lbTrimMargins[side] <= 1.6)
+      && lbTrimMargins.left >= 0.7 && lbTrimMargins.right >= 0.7,
+      lbTrimMargins);
 
     const lbFull = await app.exportToFile(page, 'pdf', {
       trimPdf: false, dpi: 150, filename: 'fp-v131-letterbox-full',
@@ -673,6 +680,110 @@ const pdfTrimScenario = {
       inkL.wMm < geomL.widthMm - 10 && lbTrim.size < lbFull.size,
       { ink: inkL.wMm, page: geomL.widthMm, sizeBytes: [lbTrim.size, lbFull.size] });
 
+    // ---------- v1.3.2 用户场景：3×2 + 底部编号 bc（防裁 1mm 安全边距） ----------
+    await app.api.clearAll(page);
+    await app.api.setLayout(page, 3, 2);
+    await app.setLayoutOptions(page, { margin: 0, colGap: 2, rowGap: 2 });
+    await app.uploadFiles(page, [
+      samplePath('sample-1.png'), samplePath('sample-5.png'), samplePath('sample-1.png'),
+      samplePath('sample-5.png'), samplePath('sample-1.png'), samplePath('sample-5.png'),
+    ], null, 6);
+    await app.setLabelConfig(page, {
+      show: true, position: 'bc', insetMm: 1.5, offsetXmm: 1.2, offsetYmm: 5,
+      fontFamily: 'times', fontSizePt: 9, bg: 'none',
+    });
+    await page.waitForTimeout(250);
+    const geomSafe = await app.getGeom(page);
+    const boxesSafe = await app.getLabelBoxes(page);
+    const inkSafe0 = await app.getInkCropBox(page, 0);
+    const contentSafe = await app.getCropBox(page, 0);
+    const boxesInCrop = boxesSafe.every((item) => item.box
+      && item.box.x >= inkSafe0.xMm - 0.1
+      && item.box.x + item.box.w <= inkSafe0.xMm + inkSafe0.wMm + 0.1
+      && item.box.y >= inkSafe0.yMm - 0.1
+      && item.box.y + item.box.h <= inkSafe0.yMm + inkSafe0.hMm + 0.1);
+    ctx.check('用户配置生效：3×2 六图 + 编号 bc/inset1.5/offsetX1.2/offsetY5/Times9',
+      geomSafe.rows === 3 && geomSafe.cols === 2 && boxesSafe.length === 6,
+      { geom: geomSafe, labels: boxesSafe.length });
+    ctx.check('编号排版盒并入 ink crop（6 个编号 box 全部在 crop 内）',
+      boxesInCrop, { crop: inkSafe0, boxes: boxesSafe.map((item) => item.box) });
+    ctx.check('trim=0 时安全边距强制为 1mm（getInkCropBox().marginMm=1）',
+      inkSafe0.marginMm === 1 && inkSafe0.wMm > 0 && inkSafe0.hMm > 0,
+      { marginMm: inkSafe0.marginMm, ink: [inkSafe0.wMm, inkSafe0.hMm], content: contentSafe });
+
+    await app.clickFormat(page, 'pdf');
+    await app.setExportOptions(page, { trimPdf: true, trimMarginMm: 0 });
+    const safeTrim0 = await app.exportToFile(page, 'pdf', {
+      trimPdf: true, trimMarginMm: 0, dpi: 150, filename: 'fp-v132-label-safe-trim0',
+    }, ctx.exportsDir);
+    const safeTrim0Verify = verifyExport('pdf', safeTrim0.path, {
+      expectWidthMm: round(inkSafe0.wMm), expectHeightMm: round(inkSafe0.hMm), expectPages: 1,
+      renderDir: path.join(ctx.exportsDir, 'pdf-render'), renderPrefix: 'fp-v132-label-safe-trim0',
+      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 1.6, inkTolerance: 14,
+    });
+    const safeTrim0Details = (safeTrim0Verify.report && safeTrim0Verify.report.details) || {};
+    const safeTrim0Margins = safeTrim0Details.inkMarginsMm || null;
+    addExportEvidence(ctx, {
+      label: 'PDF 编号防裁（用户配置，trim=0→1mm）', format: 'pdf', filename: safeTrim0.filename,
+      path: safeTrim0.path, size: safeTrim0.size, verifierOk: safeTrim0Verify.ok,
+      failedChecks: safeTrim0Verify.failedChecks, verifier: safeTrim0Verify.report,
+    });
+    ctx.check('用户配置 trim=0 PDF：MediaBox=ink bbox（±1mm）且四边 ≤1.6mm',
+      safeTrim0Verify.ok, describeVerify(safeTrim0Verify));
+    ctx.check('用户配置 trim=0：四边墨迹余量 0.7–1.6mm',
+      !!safeTrim0Margins && ['top', 'right', 'bottom', 'left']
+        .every((side) => safeTrim0Margins[side] >= 0.7 && safeTrim0Margins[side] <= 1.6),
+      safeTrim0Margins);
+    ctx.check('用户配置 trim=0：底部编号完整（底边余量 ≥0.7mm，非贴边 0）',
+      !!safeTrim0Margins && safeTrim0Margins.bottom >= 0.7
+      && safeTrim0Details.pageCount === 1,
+      { bottom: safeTrim0Margins && safeTrim0Margins.bottom, pageCount: safeTrim0Details.pageCount });
+
+    const inkSafe1 = await app.getInkCropBox(page, 1);
+    const safeTrim1 = await app.exportToFile(page, 'pdf', {
+      trimPdf: true, trimMarginMm: 1, dpi: 150, filename: 'fp-v132-label-safe-trim1',
+    }, ctx.exportsDir);
+    const safeTrim1Verify = verifyExport('pdf', safeTrim1.path, {
+      expectWidthMm: round(inkSafe1.wMm), expectHeightMm: round(inkSafe1.hMm), expectPages: 1,
+      renderDir: path.join(ctx.exportsDir, 'pdf-render'), renderPrefix: 'fp-v132-label-safe-trim1',
+      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 1.6, inkTolerance: 14,
+    });
+    const safeTrim1Margins = ((safeTrim1Verify.report && safeTrim1Verify.report.details) || {}).inkMarginsMm || null;
+    addExportEvidence(ctx, {
+      label: 'PDF 编号防裁（用户配置，trim=1mm）', format: 'pdf', filename: safeTrim1.filename,
+      path: safeTrim1.path, size: safeTrim1.size, verifierOk: safeTrim1Verify.ok,
+      failedChecks: safeTrim1Verify.failedChecks, verifier: safeTrim1Verify.report,
+    });
+    ctx.check('用户配置 trim=1mm：边距仍约 1mm（1mm 即最小值）',
+      inkSafe1.marginMm === 1 && safeTrim1Verify.ok
+      && !!safeTrim1Margins && ['top', 'right', 'bottom', 'left']
+        .every((side) => safeTrim1Margins[side] >= 0.7 && safeTrim1Margins[side] <= 1.6),
+      { marginMm: inkSafe1.marginMm, margins: safeTrim1Margins });
+
+    const inkSafe2 = await app.getInkCropBox(page, 2);
+    const safeTrim2 = await app.exportToFile(page, 'pdf', {
+      trimPdf: true, trimMarginMm: 2, dpi: 150, filename: 'fp-v132-label-safe-trim2',
+    }, ctx.exportsDir);
+    const safeTrim2Verify = verifyExport('pdf', safeTrim2.path, {
+      expectWidthMm: round(inkSafe2.wMm), expectHeightMm: round(inkSafe2.hMm), expectPages: 1,
+      renderDir: path.join(ctx.exportsDir, 'pdf-render'), renderPrefix: 'fp-v132-label-safe-trim2',
+      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 2.8, inkTolerance: 14,
+    });
+    const safeTrim2Margins = ((safeTrim2Verify.report && safeTrim2Verify.report.details) || {}).inkMarginsMm || null;
+    addExportEvidence(ctx, {
+      label: 'PDF 编号防裁（用户配置，trim=2mm）', format: 'pdf', filename: safeTrim2.filename,
+      path: safeTrim2.path, size: safeTrim2.size, verifierOk: safeTrim2Verify.ok,
+      failedChecks: safeTrim2Verify.failedChecks, verifier: safeTrim2Verify.report,
+    });
+    ctx.check('用户配置 trim=2mm：上/左/右约 2mm，底部受页面边界最多约 0.8–2.6mm',
+      inkSafe2.marginMm === 2 && safeTrim2Verify.ok
+      && !!safeTrim2Margins
+      && ['top', 'left', 'right'].every((side) =>
+        safeTrim2Margins[side] >= 1.4 && safeTrim2Margins[side] <= 2.6)
+      && safeTrim2Margins.bottom >= 0.7 && safeTrim2Margins.bottom <= 2.6,
+      { marginMm: inkSafe2.marginMm, margins: safeTrim2Margins,
+        note: '底部编号排版盒紧贴页面（autoPad 仅留 0.6mm），crop 被页面边界 clamp' });
+
     await app.clickFormat(page, 'png');
     exp = await app.getExportUiState(page);
     ctx.check('切回 PNG 后 PDF 裁剪行隐藏', exp.ui.pdfTrimRowVisible === false, exp.ui);
@@ -690,6 +801,14 @@ const pdfTrimScenario = {
         content: contentL, ink: inkL,
         trim: { marginsMm: lbTrimMargins, bytes: lbTrim.size },
         full: { marginsMm: lbFullMargins, bytes: lbFull.size },
+      },
+      labelSafe: {
+        geom: geomSafe,
+        boxes: boxesSafe.map((item) => item.box),
+        content: contentSafe,
+        ink0: inkSafe0, ink1: inkSafe1, ink2: inkSafe2,
+        margins0: safeTrim0Margins, margins1: safeTrim1Margins, margins2: safeTrim2Margins,
+        bytes: [safeTrim0.size, safeTrim1.size, safeTrim2.size],
       },
     };
     await ctx.screenshot('pdf-trim');
@@ -824,6 +943,7 @@ const vectorPdfScenario = {
     await app.openAppReady(page);
     if (!(await app.ensureV13(ctx, page))) return;
     if (!(await app.ensureV131(ctx, page))) return;
+    if (!(await app.ensureV132(ctx, page))) return;
     await app.api.clearAll(page);
     await app.api.setLayout(page, 1, 2);
     await app.uploadFiles(page, [samplePath('sample-1.png')], 0, 1);
@@ -904,8 +1024,9 @@ const vectorPdfScenario = {
       Array.isArray(spec.labels) && spec.labels.length === previewLabels.length
       && spec.labels.every((label, i) => label.text === previewLabels[i]),
       { spec: (spec.labels || []).map((label) => label.text), preview: previewLabels });
-    ctx.check('trim 关闭时 spec.crop=null',
-      spec.crop === null || spec.crop === undefined, spec.crop);
+    ctx.check('trim 关闭时 spec.crop=null 且 spec.trimMarginMm=1（v1.3.2 安全边距）',
+      (spec.crop === null || spec.crop === undefined) && spec.trimMarginMm === 1,
+      { crop: spec.crop, trimMarginMm: spec.trimMarginMm });
 
     await app.respondVectorPdf(page, vecRequest, {
       ok: true, base64: mockPdf.base64, bytes: mockPdfBytes,
@@ -957,6 +1078,9 @@ const vectorPdfScenario = {
       && Math.abs(trimSpec.crop.xMm - inkCrop.xMm) < 0.5
       && Math.abs(trimSpec.crop.yMm - inkCrop.yMm) < 0.5,
       { spec: trimSpec.crop, inkCrop });
+    ctx.check('trim=2 时矢量 spec.trimMarginMm=2（与 getInkCropBox(2) 一致）',
+      trimSpec.trimMarginMm === 2 && inkCrop.marginMm === 2,
+      { specMarginMm: trimSpec.trimMarginMm, inkMarginMm: inkCrop.marginMm });
     ctx.check('trim 开启时矢量 spec.crop 来自 ink 检测（含 inkPx/pagePx，而非内容盒）',
       !!trimSpec.crop && !!trimSpec.crop.inkPx && !!trimSpec.crop.pagePx
       && trimSpec.crop.inkPx.w > 0 && trimSpec.crop.inkPx.h > 0
@@ -992,6 +1116,7 @@ const vectorPdfScenario = {
         crop: spec.crop,
       },
       trimCrop: trimSpec.crop || null,
+      trimMarginMm: trimSpec.trimMarginMm,
       inkCrop,
       contentCrop,
       fallbackToast: fallbackToast.text,
@@ -1002,6 +1127,156 @@ const vectorPdfScenario = {
   },
 };
 
+/* ----------------------------- V 负间距 ----------------------------- */
+const negativeGapScenario = {
+  code: 'V',
+  name: 'negative-gap',
+  title: '负间距',
+  description: '行/列间距支持 -50～80mm：UI #col-gap/#row-gap min=-50；API setLayoutOptions({colGap,rowGap}) 负值生效/夹取；面板重叠、cellW/页高变化；负间距下 PNG/PDF/trim 导出正常、无 pageerror',
+  async run(ctx) {
+    const { page } = ctx;
+    await app.openAppReady(page);
+    if (!(await app.ensureV13(ctx, page))) return;
+    if (!(await app.ensureV132(ctx, page))) return;
+    await app.api.clearAll(page);
+    await app.api.setLayout(page, 2, 2);
+    await app.setLayoutOptions(page, { margin: 0, colGap: 0, rowGap: 0 });
+    await page.waitForTimeout(150);
+
+    const grid0 = await app.getGridUiState(page);
+    const info0 = await app.api.getPreviewInfo(page);
+    const geom0 = info0.geom;
+    ctx.check('间距输入 min=-50 / max=80（列与行）',
+      grid0.colGapMin === '-50' && grid0.colGapMax === '80'
+      && grid0.rowGapMin === '-50' && grid0.rowGapMax === '80',
+      { col: [grid0.colGapMin, grid0.colGapMax], row: [grid0.rowGapMin, grid0.rowGapMax] });
+    ctx.check('初始间距 0：cellW/cellH 基线记录',
+      grid0.layout.colGap === 0 && grid0.layout.rowGap === 0
+      && geom0.cellW > 0 && geom0.cellH > 0,
+      { layout: grid0.layout, cellW: geom0.cellW, cellH: geom0.cellH });
+
+    // UI 输入 -10
+    await app.setNumberInput(page, '#col-gap', -10);
+    await app.setNumberInput(page, '#row-gap', -10);
+    await app.waitFor(page, () => {
+      const layout = window.__FIGPLAY__.getState().layout;
+      return layout.colGap === -10 && layout.rowGap === -10;
+    }, null, { timeout: 5000, label: 'negative gaps -10' });
+    const grid1 = await app.getGridUiState(page);
+    const info1 = await app.api.getPreviewInfo(page);
+    const geom1 = info1.geom;
+    const panels1 = info1.panels;
+    const p0 = panels1.find((panel) => panel.row === 0 && panel.col === 0);
+    const p1 = panels1.find((panel) => panel.row === 0 && panel.col === 1);
+    const p2 = panels1.find((panel) => panel.row === 1 && panel.col === 0);
+    const overlapX = p0.x + p0.w - p1.x;
+    const overlapY = p0.y + p0.h - p2.y;
+    ctx.check('UI 输入 -10 同步到 layout 与状态',
+      grid1.layout.colGap === -10 && grid1.layout.rowGap === -10
+      && grid1.colGapInput === '-10' && grid1.rowGapInput === '-10',
+      grid1.layout);
+    ctx.check('负列间距使 cellW 增大（0→-10：cellW 85→90 左右）',
+      geom1.cellW > geom0.cellW + 3,
+      { gap0: geom0.cellW, gapNeg10: geom1.cellW });
+    ctx.check('负列间距导致面板水平重叠（≈10mm）',
+      overlapX >= 8,
+      { overlapX, p0: { x: p0.x, w: p0.w }, p1: { x: p1.x, w: p1.w } });
+    ctx.check('负行间距导致面板垂直重叠（≈10mm）',
+      overlapY >= 8,
+      { overlapY, p0: { y: p0.y, h: p0.h }, p2: { y: p2.y, h: p2.h } });
+    ctx.check('页面宽度不变、页高随负行距减小',
+      Math.abs(geom1.widthMm - geom0.widthMm) < 1e-6 && geom1.heightMm < geom0.heightMm - 1,
+      { w0: geom0.widthMm, w1: geom1.widthMm, h0: geom0.heightMm, h1: geom1.heightMm });
+
+    // API 夹取 -100 → -50；100 → 80
+    await app.setLayoutOptions(page, { colGap: -100, rowGap: 100 });
+    await page.waitForTimeout(150);
+    const grid2 = await app.getGridUiState(page);
+    ctx.check('API 间距夹取：-100→-50、100→80',
+      grid2.layout.colGap === -50 && grid2.layout.rowGap === 80,
+      grid2.layout);
+    ctx.check('负间距夹取后 pageerror 仍为 0（诊断见场景诊断）', true);
+
+    // 恢复 -10 并上传图片（导出）
+    await app.setLayoutOptions(page, { colGap: -10, rowGap: -10 });
+    await page.waitForTimeout(150);
+    await app.uploadFiles(page, [
+      samplePath('sample-1.png'), samplePath('sample-2.png'),
+      samplePath('sample-3.png'), samplePath('sample-4.png'),
+    ], null, 4);
+    const infoExport = await app.api.getPreviewInfo(page);
+    const geomExp = infoExport.geom;
+    const px = app.expectedPixelSize(geomExp, 150);
+
+    const png = await app.exportToFile(page, 'png', { dpi: 150, filename: 'fp-v132-neg-gap' }, ctx.exportsDir);
+    const pngVerify = verifyExport('image', png.path, {
+      expectWidth: px.width, expectHeight: px.height, expectFormat: 'png', minUniqueColors: 16,
+    });
+    addExportEvidence(ctx, {
+      label: '负间距 PNG（-10/-10）', format: 'image', filename: png.filename, path: png.path,
+      size: png.size, widthPx: px.width, heightPx: px.height,
+      verifierOk: pngVerify.ok, failedChecks: pngVerify.failedChecks, verifier: pngVerify.report,
+    });
+    ctx.check('负间距 PNG：像素尺寸=mm/25.4×150 且非空白',
+      pngVerify.ok, describeVerify(pngVerify));
+
+    const pdf = await app.exportToFile(page, 'pdf', {
+      trimPdf: false, dpi: 150, filename: 'fp-v132-neg-gap',
+    }, ctx.exportsDir);
+    const pdfVerify = verifyExport('pdf', pdf.path, {
+      expectWidthMm: round(geomExp.widthMm), expectHeightMm: round(geomExp.heightMm),
+      expectPages: 1, tolerancePt: 0.8,
+    });
+    addExportEvidence(ctx, {
+      label: '负间距 PDF（未裁剪）', format: 'pdf', filename: pdf.filename, path: pdf.path,
+      size: pdf.size, verifierOk: pdfVerify.ok, failedChecks: pdfVerify.failedChecks,
+      verifier: pdfVerify.report,
+    });
+    ctx.check('负间距 PDF：整页尺寸正确、页数=1', pdfVerify.ok, describeVerify(pdfVerify));
+
+    const ink = await app.getInkCropBox(page, 0);
+    const trim = await app.exportToFile(page, 'pdf', {
+      trimPdf: true, trimMarginMm: 0, dpi: 150, filename: 'fp-v132-neg-gap-trim',
+    }, ctx.exportsDir);
+    const trimVerify = verifyExport('pdf', trim.path, {
+      expectWidthMm: round(ink.wMm), expectHeightMm: round(ink.hMm), expectPages: 1,
+      renderDir: path.join(ctx.exportsDir, 'pdf-render'), renderPrefix: 'fp-v132-neg-gap-trim',
+      renderDpi: 96, tolerancePt: 3, maxInkMarginMm: 1.6, inkTolerance: 14,
+    });
+    const trimDetails = (trimVerify.report && trimVerify.report.details) || {};
+    const trimMargins = trimDetails.inkMarginsMm || null;
+    addExportEvidence(ctx, {
+      label: '负间距 PDF（trim→1mm）', format: 'pdf', filename: trim.filename, path: trim.path,
+      size: trim.size, verifierOk: trimVerify.ok, failedChecks: trimVerify.failedChecks,
+      verifier: trimVerify.report,
+    });
+    ctx.check('负间距 trim PDF：MediaBox=ink bbox（±1mm）且四边 ≤1.6mm',
+      ink.marginMm === 1 && trimVerify.ok, describeVerify(trimVerify));
+    ctx.check('负间距 trim PDF：四边墨迹余量 ≤1.6mm（贴边侧允许 0）',
+      !!trimMargins && ['top', 'right', 'bottom', 'left']
+        .every((side) => trimMargins[side] <= 1.6),
+      trimMargins);
+
+    ctx.evidence.negativeGap = {
+      base: { gap: [0, 0], geom: geom0, cellW: geom0.cellW, cellH: geom0.cellH },
+      negative: {
+        gap: [-10, -10], geom: geom1, cellW: geom1.cellW, cellH: geom1.cellH,
+        overlapX, overlapY, panels: panels1.map((panel) => ({
+          index: panel.index, x: panel.x, y: panel.y, w: panel.w, h: panel.h,
+        })),
+      },
+      clamped: grid2.layout,
+      exports: {
+        png: { size: png.size, px: [px.width, px.height], ok: pngVerify.ok },
+        pdf: { size: pdf.size, ok: pdfVerify.ok },
+        trim: { size: trim.size, ink, margins: trimMargins, ok: trimVerify.ok },
+      },
+    };
+    await ctx.screenshot('negative-gap');
+    await app.api.clearAll(page);
+  },
+};
+
 export const scenariosV13 = [
   gridCustomScenario,
   saveAsScenario,
@@ -1009,4 +1284,5 @@ export const scenariosV13 = [
   pdfTrimScenario,
   rangeNumberScenario,
   vectorPdfScenario,
+  negativeGapScenario,
 ];

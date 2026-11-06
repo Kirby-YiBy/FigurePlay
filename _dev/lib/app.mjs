@@ -1775,9 +1775,13 @@ export async function getGridUiState(page) {
       rowsInput: val('rows-input'), colsInput: val('cols-input'),
       rowsMin: attr('rows-input', 'min'), rowsMax: attr('rows-input', 'max'),
       colsMin: attr('cols-input', 'min'), colsMax: attr('cols-input', 'max'),
+      colGapInput: val('col-gap'), rowGapInput: val('row-gap'),
+      colGapMin: attr('col-gap', 'min'), colGapMax: attr('col-gap', 'max'),
+      rowGapMin: attr('row-gap', 'min'), rowGapMax: attr('row-gap', 'max'),
       layout: {
         rows: state.layout.rows, cols: state.layout.cols,
         margin: state.layout.margin, autoPad: state.layout.autoPad,
+        colGap: state.layout.colGap, rowGap: state.layout.rowGap,
       },
       geom: preview.geom,
       gridCellCount: preview.gridCellCount,
@@ -1867,6 +1871,8 @@ export async function getExportUiState(page) {
         pdfTrimChecked: !!(document.getElementById('pdf-trim-toggle') || {}).checked,
         pdfTrimMarginRowVisible: visible('pdf-trim-margin-row'),
         pdfTrimMargin: num('pdf-trim-margin'),
+        pdfTrimSafetyHintVisible: visible('pdf-trim-safety-hint'),
+        pdfTrimSafetyHint: ((document.getElementById('pdf-trim-safety-hint') || {}).textContent || '').trim(),
         vectorPdfRowVisible: visible('vector-pdf-row'),
         vectorPdfChecked: !!(document.getElementById('vector-pdf-toggle') || {}).checked,
         vectorPdfDisabled: !!(document.getElementById('vector-pdf-toggle') || {}).disabled,
@@ -2080,10 +2086,68 @@ export async function ensureV131(ctx, page, label = 'v1.3.1 ink 契约') {
   return probe.missingMethods.length === 0 && probe.hasGetCropBox === true;
 }
 
-/** 按实际墨迹检测 PDF 裁剪框（前端 96dpi 探针渲染 + 像素扫描），返回 {xMm,yMm,wMm,hMm} */
+/** 按实际墨迹检测 PDF 裁剪框（前端 96dpi 探针渲染 + 像素扫描），返回 {xMm,yMm,wMm,hMm,marginMm,inkPx,pagePx} */
 export async function getInkCropBox(page, marginMm) {
   return page.evaluate(async (margin) => window.__FIGPLAY__.getInkCropBox(margin), marginMm);
 }
+
+/* ==========================================================================
+ * v1.3.2 新增：编号防裁安全边距（trim 0→1mm）+ 负间距（-50～80mm）
+ * ========================================================================== */
+
+export const V132_METHODS = ['getInkCropBox', 'setLayoutOptions'];
+
+/** 探测 v1.3.2 契约：版本、ink crop 安全边距、负间距 UI、trim 安全提示 */
+export async function probeV132(page) {
+  return page.evaluate(async (methods) => {
+    const api = window.__FIGPLAY__;
+    const version = api ? api.version || null : null;
+    const result = {
+      version,
+      apiPresent: !!api,
+      missingMethods: methods.filter((name) => !api || typeof api[name] !== 'function'),
+      inkMargin0: null,
+      inkError: null,
+      gapInputs: {},
+      safetyHintExists: !!document.getElementById('pdf-trim-safety-hint'),
+    };
+    try {
+      const ink = await api.getInkCropBox(0);
+      result.inkMargin0 = ink ? ink.marginMm : null;
+      result.inkBox0 = ink ? { xMm: ink.xMm, yMm: ink.yMm, wMm: ink.wMm, hMm: ink.hMm } : null;
+    } catch (err) {
+      result.inkError = String(err && err.message ? err.message : err);
+    }
+    for (const [key, id] of [['colGap', 'col-gap'], ['rowGap', 'row-gap']]) {
+      const node = document.getElementById(id);
+      result.gapInputs[key] = node ? { min: node.min, max: node.max, value: node.value } : null;
+    }
+    return result;
+  }, V132_METHODS);
+}
+
+/** 场景启动守卫：v1.3.2 安全边距 + 负间距契约 */
+export async function ensureV132(ctx, page, label = 'v1.3.2 契约') {
+  const probe = await probeV132(page);
+  ctx.evidence.v132Probe = probe;
+  ctx.check(`${label}：应用版本 >= 1.3.2（当前 ${probe.version || 'unknown'}）`,
+    /^1\.(?:3\.[2-9]|[4-9]\.|[1-9]\d)|^[2-9]\./.test(String(probe.version || '')), probe.version);
+  ctx.check(`${label}：getInkCropBox(0) 可调用（空页返回整页几何；有内容时 marginMm=1 由 S 场景验证）`,
+    probe.missingMethods.indexOf('getInkCropBox') < 0 && !probe.inkError && !!probe.inkBox0,
+    { inkMargin0: probe.inkMargin0, inkBox0: probe.inkBox0, inkError: probe.inkError });
+  ctx.check(`${label}：行/列间距输入 min=-50 max=80`,
+    !!probe.gapInputs.colGap && probe.gapInputs.colGap.min === '-50'
+      && probe.gapInputs.colGap.max === '80'
+      && !!probe.gapInputs.rowGap && probe.gapInputs.rowGap.min === '-50'
+      && probe.gapInputs.rowGap.max === '80',
+    probe.gapInputs);
+  ctx.check(`${label}：trim 安全边距提示元素存在（#pdf-trim-safety-hint）`,
+    probe.safetyHintExists === true);
+  ctx.note('v1.3.2 安全边距/负间距契约探测（信息，非问题）', JSON.stringify(probe));
+  return probe.missingMethods.length === 0 && !probe.inkError
+    && probe.safetyHintExists === true;
+}
+
 
 
 

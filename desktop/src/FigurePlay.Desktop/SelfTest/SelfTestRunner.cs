@@ -543,6 +543,30 @@ namespace FigurePlay.Desktop.SelfTest
             return result;
         }
 
+        /// <summary>
+        /// 自测期间外部程序（用户复制等）可能覆盖剪贴板，导致后续桥测试误报“没有可识别的图像”。
+        /// 在每次读剪贴板之前重新放置测试 EMF，保证 selftest 稳定。
+        /// </summary>
+        private bool RefreshTestEmfClipboard(out string error)
+        {
+            error = null;
+            string emfPath = Path.Combine(_options.OutDir, "test-figure.emf");
+            if (!File.Exists(emfPath))
+            {
+                error = "测试 EMF 文件不存在：" + emfPath;
+                return false;
+            }
+
+            byte[] emfBytes = File.ReadAllBytes(emfPath);
+            if (!EmfValidator.LooksLikeEmf(emfBytes))
+            {
+                error = "测试 EMF 文件不是真实 EMF。";
+                return false;
+            }
+
+            return TestFigureFactory.PutEnhancedMetafileBytesOnClipboard(emfBytes, new List<string>(), out error);
+        }
+
         private async Task<JObject> RunClipboardConversionTestAsync()
         {
             JObject result = new JObject();
@@ -697,6 +721,16 @@ namespace FigurePlay.Desktop.SelfTest
             JObject result = new JObject();
             try
             {
+                // 外部程序可能覆盖剪贴板：读之前重新放置测试 EMF
+                string clipboardRefreshError;
+                bool clipboardRefreshed = RefreshTestEmfClipboard(out clipboardRefreshError);
+                result["clipboardRefreshed"] = clipboardRefreshed;
+                if (!clipboardRefreshed)
+                {
+                    throw new InvalidOperationException(
+                        "重新写入测试 EMF 到剪贴板失败：" + (clipboardRefreshError ?? "未知原因"));
+                }
+
                 string requestId = "selftest-e2e-" + DateTime.Now.Ticks;
                 result["requestId"] = requestId;
 
@@ -833,6 +867,16 @@ namespace FigurePlay.Desktop.SelfTest
             JObject result = new JObject();
             try
             {
+                // 外部程序可能覆盖剪贴板：读之前重新放置测试 EMF
+                string clipboardRefreshError;
+                bool clipboardRefreshed = RefreshTestEmfClipboard(out clipboardRefreshError);
+                result["clipboardRefreshed"] = clipboardRefreshed;
+                if (!clipboardRefreshed)
+                {
+                    throw new InvalidOperationException(
+                        "重新写入测试 EMF 到剪贴板失败：" + (clipboardRefreshError ?? "未知原因"));
+                }
+
                 string setup = "(function(){" +
                                " window.__fpDesktopTestResult = null;" +
                                " if (!window.FP || !FP.desktop || !FP.desktop.available) {" +

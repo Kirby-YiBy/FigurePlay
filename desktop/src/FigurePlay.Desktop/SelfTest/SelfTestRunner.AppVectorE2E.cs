@@ -370,7 +370,7 @@ namespace FigurePlay.Desktop.SelfTest
                 }
 
                 // 5) v1.3.1：trimPdf=true 墨迹裁剪 E2E（页面 = getInkCropBox 尺寸，四边白边 ≤1.5mm）
-                JObject trimResult = await RunAppVectorTrimAsync(importState);
+                JObject trimResult = await RunAppVectorTrimMarginE2EAsync(importState);
                 result["trim"] = trimResult;
                 if (!trimResult.Value<bool>("ok"))
                 {

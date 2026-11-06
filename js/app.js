@@ -179,8 +179,8 @@
     layout.widthMm = FP.clamp(layout.widthMm, 20, 500);
     layout.aspectW = FP.clamp(layout.aspectW, 0.2, 10);
     layout.aspectH = FP.clamp(layout.aspectH, 0.2, 10);
-    layout.colGap = FP.clamp(layout.colGap, 0, 80);
-    layout.rowGap = FP.clamp(layout.rowGap, 0, 80);
+    layout.colGap = FP.clamp(layout.colGap, -50, 80);
+    layout.rowGap = FP.clamp(layout.rowGap, -50, 80);
     layout.margin = FP.clamp(layout.margin, 0, 80);
     layout.bgMode = layout.bgMode === 'custom' ? 'custom' : 'white';
     layout.bgColor = validColor(layout.bgColor, '#ffffff');
@@ -439,6 +439,7 @@
     el.pdfTrimToggle = byId('pdf-trim-toggle');
     el.pdfTrimMarginRow = byId('pdf-trim-margin-row');
     el.pdfTrimMargin = byId('pdf-trim-margin');
+    el.pdfTrimSafetyHint = byId('pdf-trim-safety-hint');
     el.exportReadout = byId('export-readout');
     el.btnExport = byId('btn-export');
     el.btnExportText = byId('btn-export-text');
@@ -1402,7 +1403,8 @@
         extra = ' · PDF 页面 ' + FP.fmt(geom.widthMm, 1) + ' × ' + FP.fmt(geom.heightMm, 1) + ' mm';
       }
       if (state.export.trimPdf) {
-        extra += ' · 自动裁剪白边（按实际内容墨迹，保留 ' + FP.fmt(state.export.trimMarginMm, 1) + ' mm）';
+        extra += ' · 自动裁剪白边（按实际内容墨迹，保留 ' +
+          FP.fmt(Math.max(1, Number(state.export.trimMarginMm) || 0), 1) + ' mm 安全边距）';
       }
     }
     if (total > 80e6) extra += ' <span class="warn">（像素较多，导出可能较慢）</span>';
@@ -1497,6 +1499,7 @@
     if (el.pdfTrimRow) el.pdfTrimRow.hidden = !showTrim;
     if (el.pdfTrimToggle) el.pdfTrimToggle.checked = !!state.export.trimPdf;
     if (el.pdfTrimMarginRow) el.pdfTrimMarginRow.hidden = !showTrim || !state.export.trimPdf;
+    if (el.pdfTrimSafetyHint) el.pdfTrimSafetyHint.hidden = !showTrim || !state.export.trimPdf;
     if (el.pdfTrimMargin) el.pdfTrimMargin.value = String(state.export.trimMarginMm);
     if (el.vectorPdfRow) el.vectorPdfRow.hidden = !showVector;
     if (el.vectorPdfToggle) el.vectorPdfToggle.disabled = !showVector || vec.unsupported;
@@ -2459,6 +2462,7 @@
         heightMm: geom.heightMm,
         background: state.layout.bgMode === 'custom' ? state.layout.bgColor : '#ffffff',
         crop: cropOverride || (state.export.trimPdf ? FP.computeContentBBox(state, geom, state.export.trimMarginMm) : null),
+        trimMarginMm: Math.max(1.0, Number(state.export.trimMarginMm) || 0),
         panels: panels,
         labels: labels
       },
@@ -2714,8 +2718,8 @@
     bindLayoutNumber(el.width, 'widthMm', 20, 500, 170);
     bindLayoutNumber(el.aspectW, 'aspectW', 0.2, 10, 4);
     bindLayoutNumber(el.aspectH, 'aspectH', 0.2, 10, 3);
-    bindLayoutNumber(el.colGap, 'colGap', 0, 80, 2);
-    bindLayoutNumber(el.rowGap, 'rowGap', 0, 80, 2);
+    bindLayoutNumber(el.colGap, 'colGap', -50, 80, 2);
+    bindLayoutNumber(el.rowGap, 'rowGap', -50, 80, 2);
     bindLayoutNumber(el.margin, 'margin', 0, 80, 0);
 
     el.bgMode.addEventListener('change', function () {
@@ -3765,6 +3769,8 @@
       setLayoutOptions: function (opts) {
         opts = opts || {};
         if (opts.margin !== undefined) state.layout.margin = FP.clamp(Number(opts.margin) || 0, 0, 80);
+        if (opts.colGap !== undefined) state.layout.colGap = FP.clamp(Number(opts.colGap) || 0, -50, 80);
+        if (opts.rowGap !== undefined) state.layout.rowGap = FP.clamp(Number(opts.rowGap) || 0, -50, 80);
         if (opts.autoPad !== undefined) {
           state.layout.autoPad = !!opts.autoPad;
           if (!state.layout.autoPad) {

@@ -301,16 +301,51 @@
 
   /**
    * 渲染低分辨率探针图，按墨迹检测实际内容边界（用于 PDF 白边裁剪）。
+   * 额外把文字编号的完整排版盒并入边界，并保留至少约 1mm 安全边距，
+   * 避免 PDF/矢量渲染与浏览器字形度量差异把编号边缘裁掉。
    */
   FP.detectInkCrop = async function (state, geom, opts) {
     opts = opts || {};
     const dpi = Math.max(48, Math.min(300, Number(opts.dpi) || 96));
     const background = opts.background || FP.figureBackgroundColor(state) || '#ffffff';
+    const requestedMargin = Math.max(0, Number(opts.marginMm) || 0);
+    // 0 也保留 1mm 安全边距；用户填 1mm 及以上按用户值。
+    const effectiveMargin = Math.max(1.0, requestedMargin);
     const canvas = await FP.renderCanvas(state, geom, dpi, {
       transparent: false,
       background: background
     });
-    return FP.measureInkBox(canvas, background, opts.marginMm || 0, dpi, opts.tolerance);
+    const ink = FP.measureInkBox(canvas, background, 0, dpi, opts.tolerance);
+    let x0 = ink.wMm > 0 ? ink.xMm : Infinity;
+    let y0 = ink.hMm > 0 ? ink.yMm : Infinity;
+    let x1 = ink.wMm > 0 ? ink.xMm + ink.wMm : -Infinity;
+    let y1 = ink.hMm > 0 ? ink.yMm + ink.hMm : -Infinity;
+    const labels = FP.computeLabels(state, geom);
+    labels.forEach(function (label) {
+      if (!label.panel) return;
+      const placement = FP.getLabelPlacement(state.label, label.panel, label.text);
+      const box = placement.box;
+      if (!box) return;
+      x0 = Math.min(x0, box.x);
+      y0 = Math.min(y0, box.y);
+      x1 = Math.max(x1, box.x + box.w);
+      y1 = Math.max(y1, box.y + box.h);
+    });
+    if (!isFinite(x0) || x1 <= x0 || y1 <= y0) {
+      return { xMm: 0, yMm: 0, wMm: geom.widthMm, hMm: geom.heightMm };
+    }
+    x0 = Math.max(0, x0 - effectiveMargin);
+    y0 = Math.max(0, y0 - effectiveMargin);
+    x1 = Math.min(geom.widthMm, x1 + effectiveMargin);
+    y1 = Math.min(geom.heightMm, y1 + effectiveMargin);
+    const r = function (v) { return Math.round(v * 10) / 10; };
+    return {
+      xMm: r(x0), yMm: r(y0),
+      wMm: Math.max(1, r(x1 - x0)), hMm: Math.max(1, r(y1 - y0)),
+      marginMm: effectiveMargin,
+      inkPx: ink.inkPx || null,
+      pagePx: { w: canvas.width, h: canvas.height }
+    };
   };
 
   /** 构建并立即下载。 */

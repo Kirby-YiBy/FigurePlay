@@ -10,7 +10,7 @@
     rows: [1, 500],
     cols: [1, 500],
     widthMm: [20, 500],
-    gapMm: [0, 80],
+    gapMm: [-50, 80],
     marginMm: [0, 80],
     aspect: [0.2, 10]
   };
@@ -80,8 +80,8 @@
     let cols = clamp(FP.toInt(layout.cols, 2), FP.LIMITS.cols[0], FP.LIMITS.cols[1]);
     if (rows * cols > FP.MAX_CELLS) cols = Math.max(1, Math.floor(FP.MAX_CELLS / rows));
     const widthMm = clamp(layout.widthMm, 20, 1400);
-    const colGap = clamp(layout.colGap, 0, 80);
-    const rowGap = clamp(layout.rowGap, 0, 80);
+    const colGap = clamp(layout.colGap, -50, 80);
+    const rowGap = clamp(layout.rowGap, -50, 80);
     const margin = clamp(layout.margin, 0, 80);
     const aspectW = clamp(layout.aspectW, 0.2, 10);
     const aspectH = clamp(layout.aspectH, 0.2, 10);
@@ -95,7 +95,7 @@
     const contentW = Math.max(1, widthMm - margin * 2);
     const cellW = Math.max(1, (contentW - colGap * (cols - 1)) / cols);
     const cellH = Math.max(0.5, cellW / aspect);
-    const baseHeightMm = margin * 2 + cellH * rows + rowGap * (rows - 1);
+    const baseHeightMm = Math.max(1, margin * 2 + cellH * rows + rowGap * (rows - 1));
     const pageWidthMm = widthMm + padLeft + padRight;
     const pageHeightMm = baseHeightMm + padTop + padBottom;
 
