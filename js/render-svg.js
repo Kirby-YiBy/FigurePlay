@@ -166,6 +166,11 @@
       // 分组描边放在子图之上、编号之下
       svg.insertBefore(groupsLayer, labelsGroup);
       refs.groupsLayer = groupsLayer;
+
+      // 选中/悬停描边统一画在最上层，避免负间距重叠时被后面的子图盖住
+      const overlayLayer = FP.svgEl('g', { 'class': 'interaction-overlay-layer' });
+      svg.appendChild(overlayLayer);
+      refs.overlayLayer = overlayLayer;
     }
     return refs;
   }
@@ -306,7 +311,38 @@
     }
   }
 
-  function patchAll(state, geom, refs) {
+  function patchOverlay(state, geom, refs, hoverAnchor) {
+    if (!refs || !refs.interactive || !refs.overlayLayer) return;
+    const layer = refs.overlayLayer;
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    const selected = [];
+    geom.panels.forEach(function (panel) {
+      if (!isSelected(state, panel.index)) return;
+      selected.push(panel.index);
+      layer.appendChild(FP.svgEl('rect', {
+        'class': 'cell-selection-outline',
+        x: r3(panel.x), y: r3(panel.y), width: r3(panel.w), height: r3(panel.h),
+        rx: r3(Math.min(2, Math.min(panel.w, panel.h) * 0.05)),
+        fill: 'none', stroke: '#2563eb', 'stroke-width': 0.5,
+        'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none'
+      }));
+    });
+    if (hoverAnchor != null && selected.indexOf(hoverAnchor) < 0) {
+      const panel = FP.getPanel(geom, hoverAnchor);
+      if (panel) {
+        layer.appendChild(FP.svgEl('rect', {
+          'class': 'cell-hover-outline',
+          x: r3(panel.x), y: r3(panel.y), width: r3(panel.w), height: r3(panel.h),
+          rx: r3(Math.min(2, Math.min(panel.w, panel.h) * 0.05)),
+          fill: 'none', stroke: '#60a5fa', 'stroke-width': 0.35,
+          'stroke-dasharray': '2.4 1.8', 'vector-effect': 'non-scaling-stroke',
+          'pointer-events': 'none'
+        }));
+      }
+    }
+  }
+
+  function patchAll(state, geom, refs, hoverAnchor) {
     const bg = refs.bgRect;
     if (bg) {
       const color = resolveBackground(state);
@@ -315,6 +351,7 @@
     for (let i = 0; i < geom.panels.length; i++) patchPanel(state, geom, refs, geom.panels[i]);
     patchGroups(state, geom, refs);
     patchLabels(state, geom, refs);
+    patchOverlay(state, geom, refs, hoverAnchor);
   }
 
   function buildRoot(state, geom) {
@@ -348,12 +385,46 @@
   FP.createPreviewRenderer = function (svg) {
     let refs = null;
     let signature = '';
+    let hoverAnchor = null;
+    let hoverBound = false;
+    let lastState = null;
+    let lastGeom = null;
+
+    function repaintOverlay() {
+      if (refs && lastState && lastGeom) patchOverlay(lastState, lastGeom, refs, hoverAnchor);
+    }
+
+    function bindHover() {
+      if (hoverBound) return;
+      hoverBound = true;
+      svg.addEventListener('pointermove', function (e) {
+        const target = e.target;
+        const cell = target && target.closest ? target.closest('.cell') : null;
+        let idx = null;
+        if (cell && cell.getAttribute('data-i') != null) {
+          const n = Number(cell.getAttribute('data-i'));
+          if (isFinite(n)) idx = n;
+        }
+        if (idx !== hoverAnchor) {
+          hoverAnchor = idx;
+          repaintOverlay();
+        }
+      });
+      svg.addEventListener('pointerleave', function () {
+        if (hoverAnchor !== null) {
+          hoverAnchor = null;
+          repaintOverlay();
+        }
+      });
+    }
 
     function ensure(state, geom) {
       const sig = geom.rows + 'x' + geom.cols + '|' + FP.mergeKey(geom.merges);
       if (!refs || sig !== signature) {
         refs = buildStructure(svg, state, geom, true);
         signature = sig;
+        hoverAnchor = null;
+        bindHover();
       }
       svg.setAttribute('viewBox', '0 0 ' + r4(geom.widthMm) + ' ' + r4(geom.heightMm));
     }
@@ -361,7 +432,9 @@
     return {
       render: function (state, geom) {
         ensure(state, geom);
-        patchAll(state, geom, refs);
+        lastState = state;
+        lastGeom = geom;
+        patchAll(state, geom, refs, hoverAnchor);
       },
       patchCellTransform: function (state, geom, anchorIndex) {
         if (!refs) return false;

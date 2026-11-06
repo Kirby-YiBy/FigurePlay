@@ -26,6 +26,8 @@ namespace FigurePlay.Desktop.SelfTest
     /// </summary>
     internal sealed partial class SelfTestRunner
     {
+        private int[] _powerPointPidsAtStart = new int[0];
+
         /// <summary>
         /// 在页面创建时注入的探针：捕获宿主消息、console.error、未捕获异常、未处理的 Promise rejection。
         /// （WebView2 SDK 1.0.4314.x 的 CoreWebView2 未提供 ConsoleMessageReceived 事件，故用探针实现。）
@@ -184,6 +186,10 @@ namespace FigurePlay.Desktop.SelfTest
                 JObject vectorPdf = await RunVectorPdfTestAsync();
                 _report["vectorPdf"] = vectorPdf;
 
+                // v1.3.3：持久幂等会话的冷/热导出耗时 + 显式 shutdown 残留检查
+                JObject powerPointLifecycle = await RunPowerPointLifecycleCheckAsync();
+                _report["powerPointLifecycle"] = powerPointLifecycle;
+
                 // 3.4) WebView2 文件保存 API 能力探测（Lead 侧 showSaveFilePicker 兜底判断）
                 JObject saveFilePicker = await CheckSaveFilePickerAsync();
                 _report["saveFilePicker"] = saveFilePicker;
@@ -235,6 +241,15 @@ namespace FigurePlay.Desktop.SelfTest
                 {
                     failures.Add("PowerPoint 矢量 PDF 导出测试失败：" +
                                  (vectorPdf.Value<string>("error") ?? "未知原因"));
+                }
+
+                bool powerPointLifecycleOk = _report["powerPointLifecycle"] is JObject &&
+                                             ((JObject)_report["powerPointLifecycle"]).Value<bool>("ok");
+                if (!powerPointLifecycleOk)
+                {
+                    JObject lifecycle = _report["powerPointLifecycle"] as JObject;
+                    failures.Add("PowerPoint 持久会话生命周期检查失败：" +
+                                 (lifecycle == null ? "未生成报告" : (lifecycle.Value<string>("error") ?? "未知原因")));
                 }
 
                 bool appVectorAvailable = appVectorE2E.Value<bool>("available");
@@ -291,6 +306,16 @@ namespace FigurePlay.Desktop.SelfTest
             }
             finally
             {
+                // 兜底：即使中途失败也显式关闭自己启动的 PowerPoint，避免残留
+                try
+                {
+                    VectorPdfService.ShutdownSharedSession();
+                }
+                catch
+                {
+                    // ignore
+                }
+
                 _clock.Stop();
                 _report["success"] = exitCode == 0;
                 _report["exitCode"] = exitCode;
@@ -318,6 +343,7 @@ namespace FigurePlay.Desktop.SelfTest
 
         private void FillEnvironment()
         {
+            _powerPointPidsAtStart = PowerPointVectorExporter.SnapshotPowerPointPids();
             _report["tool"] = "FigurePlay Desktop selftest";
             _report["startedAt"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
 

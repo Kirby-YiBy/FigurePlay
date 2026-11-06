@@ -49,6 +49,7 @@ namespace FigurePlay.Desktop
         private SelfTestRunner _selfTest;
         private bool _selfTestStarted;
         private bool _hostReadySent;
+        private bool _prewarmStarted;
         private bool _closing;
         private bool _startupFailed;
 
@@ -550,6 +551,27 @@ namespace FigurePlay.Desktop
 
             _hostReadySent = true;
             PostJsonToJs(BridgeProtocol.BuildHostReady());
+
+            // v1.3.3：主窗口就绪后延迟 1.5s 后台预热 PowerPoint（不显示窗口、不创建演示文稿）。
+            if (!_options.SelfTest && !_prewarmStarted)
+            {
+                _prewarmStarted = true;
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(1500);
+                        if (!_closing)
+                        {
+                            VectorPdfService.PrewarmSharedSession();
+                        }
+                    }
+                    catch
+                    {
+                        // 预热失败静默
+                    }
+                });
+            }
         }
 
         // ---------------------------------------------------------------- 能力方法

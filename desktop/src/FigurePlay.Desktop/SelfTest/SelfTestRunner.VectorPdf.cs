@@ -239,8 +239,9 @@ namespace FigurePlay.Desktop.SelfTest
                     throw new InvalidOperationException("rasterPanels 期望 0（本测试只用 EMF），实际：" + rasterPanels);
                 }
 
-                // ---------------- PowerPoint 残留进程检查（不误杀用户原有实例） ----------------
-                await Task.Delay(1500);
+                // ---------------- PowerPoint 会话进程记录（v1.3.3 持久实例，不在此处强杀） ----------------
+                // 持久会话会保留自己启动的 POWERPNT；selftest 结束前统一 Shutdown 再检查残留。
+                await Task.Delay(300);
                 int[] pidsAfter = PowerPointVectorExporter.SnapshotPowerPointPids();
                 List<int> newPids = new List<int>();
                 foreach (int pid in pidsAfter)
@@ -253,27 +254,7 @@ namespace FigurePlay.Desktop.SelfTest
 
                 result["powerPointPidsAfter"] = pidsAfter.Length;
                 result["newPowerPointProcesses"] = new JArray(newPids.ToArray());
-                if (newPids.Count > 0)
-                {
-                    PowerPointVectorExporter.KillNewPowerPointProcesses(powerPointPidsBefore);
-                    await Task.Delay(800);
-                    int[] pidsAfterKill = PowerPointVectorExporter.SnapshotPowerPointPids();
-                    List<int> remaining = new List<int>();
-                    foreach (int pid in pidsAfterKill)
-                    {
-                        if (Array.IndexOf(powerPointPidsBefore, pid) < 0)
-                        {
-                            remaining.Add(pid);
-                        }
-                    }
-
-                    result["remainingPowerPointProcesses"] = new JArray(remaining.ToArray());
-                    if (remaining.Count > 0)
-                    {
-                        throw new InvalidOperationException(
-                            "PowerPoint 导出后仍有残留 POWERPNT 进程：" + string.Join(",", remaining.ToArray()));
-                    }
-                }
+                result["powerPointPidsNote"] = "持久会话保留，selftest 结束时统一 shutdown 后检查残留。";
 
                 // ---------------- PDF 内容校验 ----------------
                 JObject checks = new JObject();
@@ -849,5 +830,111 @@ namespace FigurePlay.Desktop.SelfTest
 
             return value.Length <= maxLength ? value : value.Substring(0, maxLength) + "...";
         }
+        // ---------------------------------------------------------------- v1.3.3 持久会话生命周期
+
+        /// <summary>
+        /// 冷/热导出耗时 + 显式 shutdown + 残留 POWERPNT 检查。
+        /// 冷导出 = 本次 selftest 第一次 PowerPoint 导出（appVectorE2E 的普通导出）；
+        /// 热导出 = 紧接其后的宿主级矢量 PDF 导出（复用同一 PowerPoint 实例）。
+        /// </summary>
+        private async Task<JObject> RunPowerPointLifecycleCheckAsync()
+        {
+            JObject result = new JObject();
+            try
+            {
+                double coldMs = 0;
+                double hotMs = 0;
+                JObject appE2E = _report["appVectorE2E"] as JObject;
+                if (appE2E != null)
+                {
+                    coldMs = appE2E.Value<double?>("exportMs") ?? 0;
+                }
+
+                JObject vectorPdf = _report["vectorPdf"] as JObject;
+                if (vectorPdf != null)
+                {
+                    hotMs = vectorPdf.Value<double?>("latencyMs") ?? 0;
+                }
+
+                int instanceCreateMs = PowerPointHost.InstanceCreateMs;
+                int sessionIndex = PowerPointHost.SessionIndex;
+                int exportCount = PowerPointHost.ExportCount;
+                bool ownsInstance = PowerPointHost.OwnsInstance;
+                int[] ownedPids = PowerPointHost.OwnedPids;
+                result["coldExportMs"] = Math.Round(coldMs, 1);
+                result["hotExportMs"] = Math.Round(hotMs, 1);
+                result["instanceCreateMs"] = instanceCreateMs;
+                result["sessionIndex"] = sessionIndex;
+                result["exportCount"] = exportCount;
+                result["ownsInstance"] = ownsInstance;
+                result["ownedPidsBeforeShutdown"] = new JArray(ownedPids);
+
+                double speedup = 0;
+                if (coldMs > 0)
+                {
+                    speedup = (coldMs - hotMs) / coldMs * 100.0;
+                }
+
+                result["speedupPercent"] = Math.Round(speedup, 1);
+
+                // 显式关闭自己启动的 PowerPoint，再检查残留（不触碰用户原有实例）
+                VectorPdfService.ShutdownSharedSession();
+                await Task.Delay(1500);
+                int[] pidsAfter = PowerPointVectorExporter.SnapshotPowerPointPids();
+                List<int> residual = new List<int>();
+                foreach (int pid in pidsAfter)
+                {
+                    if (Array.IndexOf(_powerPointPidsAtStart, pid) < 0)
+                    {
+                        residual.Add(pid);
+                    }
+                }
+
+                List<int> userPidsMissing = new List<int>();
+                foreach (int pid in _powerPointPidsAtStart)
+                {
+                    if (Array.IndexOf(pidsAfter, pid) < 0)
+                    {
+                        userPidsMissing.Add(pid);
+                    }
+                }
+
+                bool shutdownOk = residual.Count == 0;
+                result["powerPointPidsAtStart"] = new JArray(_powerPointPidsAtStart);
+                result["powerPointPidsAfterShutdown"] = new JArray(pidsAfter);
+                result["residualPids"] = new JArray(residual.ToArray());
+                result["userPidsMissing"] = new JArray(userPidsMissing.ToArray());
+                result["shutdownOk"] = shutdownOk;
+
+                bool performanceOk = coldMs > 1000 && hotMs > 0 &&
+                                     (hotMs <= coldMs - 3000 || hotMs <= coldMs * 0.75);
+                result["performanceOk"] = performanceOk;
+                if (!performanceOk)
+                {
+                    result["error"] = "热导出未明显快于冷导出：cold=" + Math.Round(coldMs, 1) +
+                                      "ms hot=" + Math.Round(hotMs, 1) + "ms（应至少快 3s 或 ≤75%）。";
+                }
+                else if (!shutdownOk)
+                {
+                    result["error"] = "显式 shutdown 后仍有残留 POWERPNT：" +
+                                      string.Join(",", residual.ToArray());
+                }
+                else if (userPidsMissing.Count > 0)
+                {
+                    result["error"] = "shutdown 误杀/关闭了用户原有 POWERPNT：" +
+                                      string.Join(",", userPidsMissing.ToArray());
+                }
+
+                result["ok"] = performanceOk && shutdownOk && userPidsMissing.Count == 0;
+            }
+            catch (Exception ex)
+            {
+                result["ok"] = false;
+                result["error"] = ex.Message;
+            }
+
+            return result;
+        }
+
     }
 }

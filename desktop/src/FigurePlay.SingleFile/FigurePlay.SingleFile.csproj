@@ -15,9 +15,9 @@
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <DebugType>embedded</DebugType>
     <Deterministic>true</Deterministic>
-    <Version>1.3.2</Version>
-    <FileVersion>1.3.2.0</FileVersion>
-    <AssemblyVersion>1.3.2.0</AssemblyVersion>
+    <Version>1.3.3</Version>
+    <FileVersion>1.3.3.0</FileVersion>
+    <AssemblyVersion>1.3.3.0</AssemblyVersion>
     <AssemblyTitle>FigurePlay 桌面版（单文件）</AssemblyTitle>
     <Product>FigurePlay</Product>
     <Description>FigurePlay 论文子图排版桌面版单文件启动器（内嵌完整运行时与网页资源）</Description>

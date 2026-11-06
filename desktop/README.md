@@ -16,17 +16,20 @@
    **v1.3.2 起**：开启 crop 时宿主用 PowerPoint 实际渲染的 PNG 探针做**二次墨迹校正**，并把页面收敛到
    “实际 ink bbox + `trimMarginMm` 安全边距”（应用默认至少 1mm）——不再裁到零白边，因此底部编号等
    贴边内容不会被裁，输出四边留白本机实测 ≈1.0mm（trim=0）与 ≈2.0mm（trim=2mm）。
+   **v1.3.3 起**：PowerPoint 实例**持久复用**（应用启动后后台预热 1.5s，之后不再每次冷启动/退出），
+   第二次导出从 ~27s 降到 **~0.53s**（-98%）；应用退出 / selftest 结束显式 shutdown 自己启动的实例，
+   绝不关闭用户原有 PowerPoint；COM 断连自动重建会话。
 4. **单文件发行版**：`FigurePlay.exe` 一个文件内嵌完整运行时与网页资源（主程序 exe、WebView2 托管 dll、
    `WebView2Loader.dll`、`wwwroot`），首次启动自解压到 `%LOCALAPPDATA%\FigurePlay\bin\app-<hash>`，
    从任意目录双击即可运行，不依赖旁边 dll/assets；仍依赖系统 **WebView2 Runtime**。
 
-> 本候选包内嵌的是 **FigurePlay 应用 v1.3.2**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
-> ink 裁剪并入编号排版盒 + 至少 1mm 安全边距、行/列间距支持 -50～80mm、矢量 PDF + crop、saveAs 开关、
-> `.fig` EMF 保留等）；`dist\wwwroot` 与构建时 `E:\FigurePlay` 冻结源文件 **逐字节一致**（17 个文件），
-> 桌面版桥协议见第 4 节。
+> 本候选包内嵌的是 **FigurePlay 应用 v1.3.3**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
+> ink 裁剪并入编号排版盒 + 至少 1mm 安全边距、行/列间距支持 -50～80mm、负间距下选中/悬停顶层描边、
+> 矢量 PDF + crop、saveAs 开关、`.fig` EMF 保留等）；`dist\wwwroot` 与构建时 `E:\FigurePlay` 冻结源文件
+> **逐字节一致**（17 个文件），桌面版桥协议见第 4 节。
 
 技术栈：**.NET Framework 4.8**（Windows 10/11 自带运行时，最终用户无需安装 .NET）
-\+ **Microsoft.Web.WebView2**（WinForms）。多文件版约 2.26 MB（dist 24 文件），单文件版约 **0.79 MB**（830,976 B）。
+\+ **Microsoft.Web.WebView2**（WinForms）。多文件版约 2.27 MB（dist 24 文件），单文件版约 **0.80 MB**（837,120 B）。
 
 ---
 
@@ -129,9 +132,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 9. 生成两个 zip（多文件版 / 单文件版）；
 10. 打印两个 exe 的路径/大小/SHA256、`app.js` SHA256、dist 大小、zip 大小、自测结果与总耗时。
 
-> 构建机会**串行**跑两次完整自测（先多文件、退出后再单文件；含两次 MATLAB 启动 + 多次 PowerPoint
-> 矢量导出），总耗时约 **10–11 分钟**（本机实测 623.0s）。可用 `-SkipSingleFile` 只构建多文件版，
-> 或用 `-SkipSelfTest` 跳过自测。
+> 构建机会**串行**跑两次完整自测（先多文件、退出后再单文件；含两次 MATLAB 启动 + 首次 PowerPoint
+> 冷启动，v1.3.3 起持久会话让后续导出 <1s），总耗时约 **4–5 分钟**（本机实测 254.9s）。
+> 可用 `-SkipSingleFile` 只构建多文件版，或用 `-SkipSelfTest` 跳过自测。
 
 ### 2.3 常用参数
 
@@ -324,6 +327,9 @@ Host → JS（失败）：`{"type":"vector-pdf-export","requestId":"<id>","ok":f
 - 超时 **120 秒**（首次冷启动 PowerPoint 可能较慢；v1.3.2 的墨迹校正会多组版 1–2 次，故放宽）；
   转换在专用 STA 线程串行执行，不阻塞 UI；`vectorPanels`/`rasterPanels` 为送入引擎的 EMF / 位图面板数量。
 - 成功响应可能附带 `diagnostics` 字符串数组（宿主墨迹校正/迭代日志，前端可忽略）。
+- **v1.3.3 会话生命周期**：宿主首次导出（或启动后后台预热）时创建 PowerPoint.Application 并保持存活，
+  后续导出只 `Presentations.Add/Close`；应用退出/selftest 结束时显式 Shutdown 自己启动的实例；
+  只 Quit/Kill 自己创建的新 POWERPNT 进程，绝不关闭用户原有实例；COM 断连/RPC 错误自动重建。
 
 ### 4.4 启动握手
 
@@ -418,11 +424,13 @@ MATLAB 路径与版本会缓存（`MatlabLocator`），避免重复探测。
   得到实际 ink bbox；目标页面 = ink bbox 向四周扩展 `trimMarginMm`（再按原页面边界裁切），
   若四边余量不在 `trimMarginMm ± 0.5mm` 内则重新组版，最多 2 次；探针异常时保留原 crop 导出
   并在 diagnostics 记录。见 7.4。
-- **进程清理**：记录调用前的 `POWERPNT.EXE` PID；只 Quit/Kill **本次新启动**的实例，绝不关闭用户已打开的 PowerPoint；
-  120 秒超时兜底同样只清理新进程；
-- 坐标/单位：所有 mm → pt（×72/25.4）；crop 平移规则见 4.3。
+- **持久会话（v1.3.3）**：`PowerPointHost` 在专用 STA 线程持有单个 `PowerPoint.Application`；创建前记录
+  已有 `POWERPNT.EXE` PID，只把自己新建的进程记为 owned；应用退出 / selftest 结束时 Quit owned 实例并
+  仅 kill owned PID，**绝不关闭用户原有 PowerPoint**；COM 断连/RPC 错误自动重建会话；120 秒超时兜底
+  重置会话。主窗口就绪后延迟 1.5s 后台预热（只启动 Application，不创建演示文稿；selftest 不预热）；
+- 坐标/单位：所有 mm → pt（×72/25.4）；crop 平移规则见 4.3。见 7.5。
 
-### 7.3 实测结果（本机，v1.3.2）
+### 7.3 实测结果（本机，v1.3.3）
 
 - 170×120mm 页面：**481.92×340.08 pt**、`pdfimages` 0 位图、`pdftotext` 可提取标签文字 `(a)`；
 - 宿主级 crop 150×100mm（实心 EMF，stretch）+ trimMargin：
@@ -436,7 +444,9 @@ MATLAB 路径与版本会缓存（`MatlabLocator`），避免重复探测。
   - trim=0（安全边距 1mm）→ 页 **72.94×65.53mm**，四边余量 **1.02/1.02/1.02/1.02mm**，
     底部 9mm 条带编号墨迹 **279px**、`pdftotext` 提取到 `(a)`，编号完整不裁；
   - trim=2mm → 页 **74.93×67.56mm**，四边余量 **2.03/2.03/2.20/2.20mm**，底部编号墨迹 **275px**、文本正常；
-- PowerPoint 单次导出耗时约 **30–35 秒**（含启动与 1–2 次墨迹探针组版），进程退出后 `POWERPNT` 残留数为 0。
+- **v1.3.3 持久会话冷/热导出**：首次导出 **26.9s / 27.4s**（含 PowerPoint 冷启动约 24.9–25.4s），
+  第二次导出 **0.53s / 0.53s**（提速 **98.0% / 98.1%**，同一实例只组版+导出；selftest 中连续导出 7 次）；
+  selftest 结束显式 shutdown 后 `POWERPNT` 残留数为 **0**（用户原有实例不受影响）。
 
 ### 7.4 安全边距 + 二次墨迹校正（v1.3.2，解决“trim=0 时底部编号被裁”）
 
@@ -458,6 +468,30 @@ v1.3.2 修复：
 
 > 效果：trim=0 时输出四边留白 ≈1.0mm（本机 1.02mm），编号完整；trim=2mm 时 ≈2.0–2.2mm；
 > 不再出现“裁到零白边把编号裁掉”的问题。selftest 以“四边余量 = trimMargin ±0.5mm + 底部编号墨迹/文本存在”为硬判据。
+
+### 7.5 PowerPoint 持久会话与预热（v1.3.3）
+
+用户反馈：每次矢量 PDF 导出约 20–30s，疑似每次启动/退出 PowerPoint。实测确认冷启动占 ~25s，
+组版+导出本身仅 ~0.5–2s。v1.3.3 改为持久会话：
+
+1. `PowerPointHost`：单例 + 专用 STA 线程 + 阻塞队列；首次请求（或后台预热）创建
+   `PowerPoint.Application` 并保持存活，后续请求在同一线程复用该实例，每次只 `Presentations.Add` →
+   组版/导出 → `presentation.Close`，不 Quit Application。
+2. **进程所有权**：创建前快照已有 `POWERPNT.EXE` PID；创建后只把新增 PID 记为 owned。
+   Shutdown/超时兜底仅 Quit/kill owned 实例，用户原本打开的 PowerPoint 绝不被关闭（若检测不到新 PID，
+   视为非自己实例，永不 Quit）。
+3. **显式 Shutdown**：主窗口 `FormClosed`、`Program` 退出兜底、selftest 结束时都会调用
+   `PowerPointHost.Shutdown()`（Quit owned + kill owned + 释放 COM）；selftest 在 shutdown 后才断言
+   `POWERPNT` 残留为 0。
+4. **预热**：主窗口就绪后延迟 1.5s 在后台启动 Application（不创建演示文稿、失败静默），让用户第一次
+   导出尽量走热路径；`--selftest` 模式跳过预热，便于测量真实冷/热耗时。
+5. **断连重建**：`Presentations.Add`/组版/导出抛 RPC 断连类 COM 异常时，自动释放旧会话、重建新实例并
+   重试一次；仍失败返回可读错误，不崩溃。
+6. **超时**：单次导出仍由 `VectorPdfService` 120s 兜底；超时会重置会话（仅清理自己启动的实例），
+   下次导出自动重建。
+
+> 实测：首次导出 26.9s（冷启动 24.9s）→ 后续 0.53s（-98%）；selftest 连续 7 次导出均复用同一实例，
+> 结束后 POWERPNT 残留 0。应用正常退出/关闭窗口同样会清理自己启动的 PowerPoint。
 
 ---
 
@@ -490,10 +524,11 @@ dist\FigurePlay.exe --selftest --out .\selftest --screenshot .\selftest\my-shot.
 | crop+trimMargin 矢量 PDF | 实心 EMF + `crop {10,10,150,100}` + stretch，`trimMarginMm` 分别 1/2mm | 页尺寸 = (150+2m)×(100+2m)mm（本机 152.02×101.98 / 154.01×103.97mm）、渲染四边余量 ≈m（±0.5mm）、0 位图 |
 | 应用矢量 E2E | JS 构造 File 注入 `#file-input` 导入 `.fig` → 等 cell 有数据且 `getVectorStatus().emfCount>0` → `setExportOptions({format:'pdf',vectorPdf:true,saveAs:false})` → `exportVectorPdfBase64()` | 应用生成的 PDF 页尺寸=geom（170×193mm → 481.92×547.08pt）、无位图、标签文字存在、`vectorPanels≥1`/`rasterPanels=0` |
 | 应用矢量 trim E2E（v1.3.2） | 同一页面 `setExportOptions({trimPdf:true,trimMarginMm:0})` → `getInkCropBox()` + `exportVectorPdfBase64()`；再做底部中间编号 trim=0/2mm 两个用例 | 四边渲染余量 = max(1,trim)±0.5mm（本机 1.02/1.02/1.02/1.02mm 与 2.03/2.03/2.20/2.20mm）、0 位图、`rasterPanels=0`；底部编号条带存在墨迹 + `pdftotext` 提取到 `(a)`；无残留 POWERPNT |
-| PowerPoint 进程 | 导出前后快照 `POWERPNT.EXE` | 不残留本次新启动的 PowerPoint（用户原有实例不处理） |
+| PowerPoint 持久会话（v1.3.3） | 连续多次导出复用同一 `PowerPoint.Application`；记录冷/热 exportMs；结束显式 shutdown | 热导出至少比冷导出快 3s 或 ≤75%（本机 26.9s → 0.53s，-98%）；shutdown 后**残留 POWERPNT=0**；用户原有实例不受影响 |
+| PowerPoint 进程 | 导出前后快照 `POWERPNT.EXE` | 只记录 owned PID，不在单次导出后强杀（持久会话）；selftest 结束 shutdown 后断言残留 0 |
 | 保存 API | 在 WebView2 中探测 `typeof window.showSaveFilePicker` 与 `isSecureContext` | 报告探测结果（不弹系统对话框；本机实测均支持） |
 | host-ready | 网页端探针捕获 `host-ready` | 收到且 version=1.3.2（与 BridgeProtocol.HostVersion 一致） |
-| 截图 | `CoreWebView2.CapturePreviewAsync`（离屏加载后临时移到屏幕内） | 生成非空白 PNG（1600×1000） |
+| 截图 | `CoreWebView2.CapturePreviewAsync`（离屏加载后临时移到屏幕内） | 生成非空白 PNG（1601×1001） |
 | console | 页面探针（`console.error` / `window.onerror` / `unhandledrejection`） | 0 条 |
 | 日志 | 写 `<out>\selftest-report.json` | 成功时 `success=true` |
 
@@ -505,7 +540,7 @@ dist\FigurePlay.exe --selftest --out .\selftest --screenshot .\selftest\my-shot.
 
 ```
 selftest\
-├─ selftest-report.json      ← 完整 JSON 日志（环境、layout、剪贴板/EMF、桥、MATLAB .fig、矢量 PDF/crop、应用 E2E、截图、console、耗时）
+├─ selftest-report.json      ← 完整 JSON 日志（环境、layout、剪贴板/EMF、桥、MATLAB .fig、矢量 PDF/crop/trim、PowerPoint 冷热会话、应用 E2E、截图、console、耗时）
 ├─ test-figure.emf           ← C# 录制的真实 EMF（文件头 01 00 00 00）
 ├─ clipboard-test.png        ← 经 C# 转换得到的 4400px PNG（可人工检查清晰度）
 ├─ matlab-test-figure.fig    ← MATLAB 现场生成的测试 .fig
@@ -521,41 +556,39 @@ selftest\
 └─ screenshot.png            ← 应用窗口截图（上传 .fig + 底部编号后）
 ```
 
-本机（Windows 10.0.26200 / WebView2 156.0.4314.58 / MATLAB R2024b / PowerPoint 2021）v1.3.2 候选包结果：
-**多文件版与单文件版均 exitCode 0**（串行执行）。应用版本 1.3.2、host-ready 版本 1.3.2、exe FileVersion 1.3.2.0；
-应用就绪 ~210–240 ms；三栏布局 CSS 视口 **1280×800（dpr 1.25）**、grid **276+678+326 px**；
-EMF→PNG **4400×2933**（~164 KB，约 650dpi）；桥端到端 ~340–350 ms（含 `emfBase64` 校验，3420B/99 条记录）；
-应用 JS 桥 ~230–350 ms；MATLAB `.fig` 生成 ~18–21 s、导入转换 ~24–44 s（**4004×2898**、`MATLAB-FIG`、约 280 KB，
-同时返回 50,068B 真实 EMF）；宿主矢量 PDF ~29–30 s（页 481.92×340.08pt、0 位图、标签文字 OK）；
-宿主 crop+trimMargin：**1mm → 152.02×101.98mm、余量 0.68/0.68/0.85/0.85mm**；
-**2mm → 154.01×103.97mm、余量 1.69/1.69/1.86/1.69mm**，均 0 位图；
-应用级 E2E 导入 ~24–35 s、导出 ~29–30 s（页 481.92×547.08pt、0 位图、标签 OK）；
-**应用级 trim 基础用例：页 77.39×60.11mm、余量 0.85/0.85/1.02/1.02mm**；
-**编号底部中间用户场景**：trim=0（安全边距 1mm）→ **72.94×65.53mm、四边余量 1.02/1.02/1.02/1.02mm、
-底部 9mm 条带编号墨迹 279px、`pdftotext` 文本存在**；trim=2mm → **74.93×67.56mm、
-余量 2.03/2.03/2.20/2.20mm、底部编号墨迹 275px、文本正常**；全部 0 位图、无残留 POWERPNT；
-`showSaveFilePicker` 与 `isSecureContext` 均 true；console error 0；截图 1600×1000 非空白。
-整轮自测：多文件版 **327.2 s**、单文件版 **280.4 s**（含两次 MATLAB + 多次 PowerPoint 导出）；
-完整构建（含双自测）**623.0 s**。
+本机（Windows 10.0.26200 / WebView2 156.0.4314.58 / MATLAB R2024b / PowerPoint 2021）v1.3.3 候选包结果：
+**多文件版与单文件版均 exitCode 0**（串行执行）。应用版本 1.3.3、host-ready 版本 1.3.3、exe FileVersion 1.3.3.0；
+应用就绪 ~210–215 ms；三栏布局 CSS 视口 **1067×667**、grid **244+527+296 px**；
+EMF→PNG **4400×2933**（~165 KB，约 650dpi）；桥端到端 ~355–368 ms（含 `emfBase64` 校验，3420B/99 条记录）；
+应用 JS 桥 ~260–350 ms；MATLAB `.fig` 生成 ~18–21 s、导入转换 ~27.5–28 s（**4004×2898**、`MATLAB-FIG`、约 280 KB，
+同时返回 50,068B 真实 EMF）；PowerPoint **首次导出 26.9/27.4s（冷启动 ~24.9–25.4s）→ 后续 0.53s（提速 98%）**，
+selftest 中连续 7 次导出复用同一实例；矢量 PDF 页 481.92×340.08pt、0 位图；宿主 crop+trimMargin
+1mm → 152.02×101.98mm、2mm → 154.01×103.97mm；应用级 E2E 导入 ~28–30 s、导出 ~27s
+（页 481.92×547.08pt、0 位图、标签 OK）；**应用级 trim 基础用例 77.39×60.11mm、余量 0.85/0.85/1.02/1.02mm**；
+**编号底部中间 trim=0 → 72.94×65.53mm、余量 1.02/1.02/1.02/1.02mm、底部 9mm 条带编号墨迹 279px、文本存在**；
+trim=2mm → 74.93×67.56mm、余量 2.03/2.03/2.20/2.20mm、底部编号墨迹 275px；四处均 0 位图；
+**selftest 结束显式 shutdown 后 POWERPNT 残留=0**；`showSaveFilePicker`/`isSecureContext` 均 true；
+console error 0；截图 1601×1001 非空白。整轮自测：多文件版 **119.3 s**、单文件版 **122.2 s**；
+完整构建（含双自测）**254.9 s**。
 
-### 8.4 v1.3.2 候选包核对
+### 8.4 v1.3.3 候选包核对
 
 | 文件 | 大小 | SHA256 |
 | --- | --- | --- |
-| `dist\FigurePlay.exe` | 279,040 B | `4378D6D20B0DA5FF31CBF6B552C95E9EC1A68D7C621C06AB94480DF18EAFA903` |
-| `dist-single\FigurePlay.exe` | 830,976 B | `0F516CCACC927A1EE59C9F2CAD9B8FFC07B17FE66EC4DD19FC989294CC96E826` |
-| `FigurePlay-desktop-1.3.2-win-x64.zip` | 791,676 B | `E8AF29FE788F0576717FFA60F6D5088EEF601D0CBBD3D74389E67839E52AB90E` |
-| `FigurePlay-1.3.2-single-win-x64.zip` | 820,899 B | `E512FC68539C0B15BA7CD8AD9741C3B32132D94AEDE80800D01CDF3F1D7A4B27` |
-| `wwwroot\index.html` | 37,575 B | `986F0BDA49A1EB9EB0399D70A75864F446872C1F6EA5A81E3941382044E73077` |
-| `wwwroot\assets\styles.css` | 34,975 B | `60AB414184AE518B1534005E7E7FA512883C87FCA5AE2279DD1DC3B760656010` |
-| `wwwroot\js\app.js` | 158,483 B | `A5192D9487919D4748707A0ED7A68D3D74EBAC3FD1E96B173F1788EED48BBED5` |
+| `dist\FigurePlay.exe` | 290,816 B | `4AE0AED9BE3169C362CEAB46CC6EBFBB0BB7CE270D7E5F6E767386615C5FB13C` |
+| `dist-single\FigurePlay.exe` | 837,120 B | `CA79F7CED060DBCE4E377EF951ACF4D7333504142C7C72FC88B13950F153DBE9` |
+| `FigurePlay-desktop-1.3.3-win-x64.zip` | 797,728 B | `9326B09E1439FD1B69DC0511EB820AAC429B3CCFCB0F6BCA9EF33CC6DD2E5C62` |
+| `FigurePlay-1.3.3-single-win-x64.zip` | 826,950 B | `07B5B33AD38FC6774E68142FF8C9F51B0F25CA21C21777762DA3D5409B61357F` |
+| `wwwroot\index.html` | 37,665 B | `BA67EE93339D2D23A9BAB1652D5929C528268C21224163872B3E8CCD69128583` |
+| `wwwroot\assets\styles.css` | 35,192 B | `77CF92394936A469305B56F84E98B88EC472B82F21005AD9FDFB8B61EA04480C` |
+| `wwwroot\js\app.js` | 158,540 B | `89A2980C6141FDA4E2008A57EC3ADFA0402CE1A608039F1629FC637C74CCE210` |
 | `wwwroot\js\layout.js` | 18,898 B | `094EEDC49361D43C9CF16CFBB556A2914C72EC846B48353F5F8BC6F497BB5C8F` |
-| `wwwroot\js\render-svg.js` | 14,395 B | `AB398A94C3A5985422BC53BBA27357E69D2B672F69EAE61A092198D14B9DE6C8` |
+| `wwwroot\js\render-svg.js` | 17,154 B | `96213C74EE38E1990F25AC9BFDCC9F2D3BFAB9B07CD150173CF6BE444FAA30EC` |
 | `wwwroot\js\desktop.js` | 7,012 B | `1B26B2ECC64F220D318A546DBB8EA579BDA902A0AB49D586D11DA2E9F35C6A93` |
 | `wwwroot\js\pdf.js` | 6,260 B | `F3B2B1FBCD31C7B2167843C34872697FF9ADCD84A1DB2CA552FFE5A15578D7A3` |
 | `wwwroot\js\zip.js` | 3,940 B | `11C6D96644B1D15500F3E542A14A6D14314F97807DEC7EFA5C2A41B6DACA644F` |
 | `wwwroot\js\export.js` | 15,133 B | `C73BCBB7C1B70CCE4613D67BEBC030FA9BBE778DE049B2971118DC1C19C1CF0D` |
-| `wwwroot\js\util.js` | 17,788 B | `667F418F8B67B7AF9540B544341C22A58006BB7155FCAFD139C1999BB8911381` |
+| `wwwroot\js\util.js` | 17,788 B | `7EC0388340C51504BAF54AF67AACA7633950E3B822F4DD4C7A825982B776760B` |
 
 > 校验：`dist\wwwroot` 共 **17 个文件**与构建时 `E:\FigurePlay` 冻结源逐一哈希一致（应用源已冻结）；
 > 两个 zip 均已解压到干净目录复跑 `--selftest`（exit 0，串行）；`dist-single\` 与单文件 zip 内均
@@ -600,6 +633,8 @@ EMF→PNG **4400×2933**（~164 KB，约 650dpi）；桥端到端 ~340–350 ms�
 | 矢量 PDF 需要 PowerPoint | 需要本机桌面版 PowerPoint 2016+（COM）；未安装/COM 失败会返回可读错误，应用自动回退位图 PDF。首次导出约 20–40 s 启动 PowerPoint，超时 120 s（含二次墨迹校正组版） |
 | 矢量 trim 安全边距 | v1.3.2 起 trim 输出页 = 实际 ink bbox + `trimMarginMm`（应用发送 max(1, 用户留边)）；trim=0 时四边约 1mm、trim=2mm 时约 2mm，编号等贴边内容不会被裁；页面可能比 app 预览 crop 略小/略大（EMF 与 PNG 基准差） |
 | 墨迹校正探针失败回退 | PowerPoint 的 PNG 探针导出失败时，会保留 app 传入 crop 直接导出（可能仍有 1–2mm 白边或边界偏差），diagnostics 记录原因，不阻塞导出 |
+| PowerPoint 常驻后台（v1.3.3） | 首次导出/预热后 POWERPNT 会保留在后台以加速后续导出；应用正常退出/关闭窗口、selftest 结束会显式关闭自己启动的实例。若应用被强杀可能残留，重新打开应用或任务管理器结束即可；用户原本打开的 PowerPoint 不会被关闭 |
+| PowerPoint 预热 | 主窗口就绪后延迟 1.5s 后台启动 PowerPoint（不显示窗口、不创建演示文稿），失败静默；`--selftest` 不预热以便测冷启动 |
 | 矢量 PDF 复杂变换回退 | `cover` / `zoom` / `offset` 等非 contain/stretch 变换返回 `UNSUPPORTED_TRANSFORM`，前端回退位图 PDF；rotation 支持 |
 | crop 无效时忽略 | crop 越界/过小会静默忽略，输出整页（不报错） |
 | 高分辨率 PNG 体积 | EMF→PNG 目标 4400px；单张 PNG 超过 8MB 时会自动缩小重试，避免桥消息/内存过大 |
@@ -627,6 +662,11 @@ EMF→PNG **4400×2933**（~164 KB，约 650dpi）；桥端到端 ~340–350 ms�
   “整页 ink bbox + 安全边距”扩展（而非裁到零），收敛 ±0.5mm、最多 2 次；新增
   `SelfTestRunner.TrimMarginE2E.cs`（基础 trim + 编号底部中间 trim=0/2mm 用例，pdftoppm 像素级余量
   + 底部编号墨迹/文本完整性）；`SelfTestRunner.CropPdf.cs` 改为 trimMargin 1/2mm 宿主级用例。
+- v1.3.3：新增 `Bridge\PowerPointHost.cs`（专用 STA 线程 + 持久 Application + owned PID 所有权 +
+  预热/Shutdown/断连重建/超时重置）；`PowerPointVectorExporter` 拆出 `ComposeWithApplication`
+  （不创建/退出 PowerPoint）；`VectorPdfService` 改为提交到 PowerPointHost；MainForm 就绪后后台预热、
+  FormClosed 时 Shutdown；Program 退出兜底 Shutdown；selftest 新增 `powerPointLifecycle`
+  （冷/热 exportMs、实例创建耗时、显式 shutdown、残留 POWERPNT 断言）。
 - 修改 C# 后：`build.ps1` 自动编译 + 双自测 + 双 zip（双自测含 MATLAB 与多次 PowerPoint 导出，约 13–15 分钟）；
 - 只改网页端（`E:\FigurePlay`）后：`build.ps1 -SkipBuild` 快速重打包（payload 会重新生成，单文件版随之更新）；
 - 修改桥协议时同步改：`BridgeProtocol.cs` ↔ `E:\FigurePlay\js\desktop.js` ↔ 本文档第 4 节；

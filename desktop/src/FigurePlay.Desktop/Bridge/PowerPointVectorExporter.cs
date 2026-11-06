@@ -99,8 +99,11 @@ namespace FigurePlay.Desktop.Bridge
             }
         }
 
-        /// <summary>在当前（STA）线程执行 PowerPoint 排版并导出 PDF。</summary>
-        public static VectorPdfResult Export(VectorPdfSpec spec)
+        /// <summary>
+        /// 在调用方（持久化宿主 STA 线程）提供的 PowerPoint 实例上完成一次排版 + PDF 导出。
+        /// 不创建/退出 PowerPoint，实例生命周期由 PowerPointHost 统一管理。
+        /// </summary>
+        internal static VectorPdfResult ComposeWithApplication(dynamic app, VectorPdfSpec spec)
         {
             VectorPdfResult result = new VectorPdfResult();
             Trace("export start hasCrop=" + (spec == null ? "null" : spec.HasCrop.ToString()) + " page=" + (spec == null ? "" : (spec.WidthMm + "x" + spec.HeightMm)));
@@ -109,54 +112,17 @@ namespace FigurePlay.Desktop.Bridge
                 return VectorPdfResult.Fail("导出参数无效：spec 为空。");
             }
 
+            if (app == null)
+            {
+                return VectorPdfResult.Fail("PowerPoint 会话不可用（可能已断开），请重试。");
+            }
+
             string tempDir = Path.Combine(AppPaths.TempRoot, "vectorpdf-" + Guid.NewGuid().ToString("N"));
             string pdfPath = Path.Combine(tempDir, "output.pdf");
-            object application = null;
-            int[] existingPowerPointPids = SnapshotPowerPointPids();
-            bool startedByUs = existingPowerPointPids.Length == 0;
             Stopwatch watch = Stopwatch.StartNew();
-
             try
             {
                 Directory.CreateDirectory(tempDir);
-
-                Type powerpointType = Type.GetTypeFromProgID("PowerPoint.Application");
-                if (powerpointType == null)
-                {
-                    return VectorPdfResult.Fail(
-                        "未安装 Microsoft PowerPoint，无法导出矢量 PDF。" +
-                        "矢量 PDF 导出需要桌面版 PowerPoint 2016 或更高版本；" +
-                        "如未安装，请使用位图 PDF 导出（EMF 仍会以图片方式保留清晰度）。");
-                }
-
-                try
-                {
-                    application = Activator.CreateInstance(powerpointType);
-                }
-                catch (Exception ex)
-                {
-                    return VectorPdfResult.Fail(
-                        "无法启动 PowerPoint COM 组件：" + DescribeException(ex) +
-                        "。请确认已安装桌面版 PowerPoint（不是仅网页版/查看器）。");
-                }
-
-                if (application == null)
-                {
-                    return VectorPdfResult.Fail("无法启动 PowerPoint COM 组件（CreateInstance 返回空）。");
-                }
-
-                Trace("powerpoint app created");
-                dynamic app = application;
-                // PowerPoint 2021 不允许隐藏应用窗口（Visible=false 会抛异常），
-                // 但 Presentations.Add(WithWindow=false) 不会显示演示文档窗口；此处尽力而为。
-                try
-                {
-                    app.Visible = MsoFalse;
-                }
-                catch
-                {
-                    // ignore
-                }
 
                 CropBox crop = spec.HasCrop
                     ? new CropBox
@@ -311,38 +277,6 @@ namespace FigurePlay.Desktop.Bridge
             }
             finally
             {
-                if (startedByUs && application != null)
-                {
-                    try
-                    {
-                        ((dynamic)application).Quit();
-                    }
-                    catch
-                    {
-                        // ignore
-                    }
-                }
-
-                try
-                {
-                    if (application != null)
-                    {
-                        Marshal.FinalReleaseComObject(application);
-                    }
-                }
-                catch
-                {
-                    // ignore
-                }
-
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-
-                if (application != null)
-                {
-                    WaitAndKillNewPowerPointProcesses(existingPowerPointPids, startedByUs ? 3000 : 1000);
-                }
-
                 try
                 {
                     if (Directory.Exists(tempDir))
@@ -356,6 +290,54 @@ namespace FigurePlay.Desktop.Bridge
                 }
             }
         }
+
+        /// <summary>判断异常是否属于 COM 断连（RPC server unavailable 等），用于自动重建会话。</summary>
+        internal static bool LooksLikeComDisconnected(Exception exception)
+        {
+            for (Exception current = exception; current != null; current = current.InnerException)
+            {
+                COMException comException = current as COMException;
+                if (comException != null)
+                {
+                    int hr = comException.HResult;
+                    if (hr == unchecked((int)0x80010108) ||
+                        hr == unchecked((int)0x800706BA) ||
+                        hr == unchecked((int)0x800706BE) ||
+                        hr == unchecked((int)0x80010007) ||
+                        hr == unchecked((int)0x800401FD))
+                    {
+                        return true;
+                    }
+                }
+
+                string message = current.Message ?? string.Empty;
+                if (message.IndexOf("RPC", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    message.IndexOf("远程过程调用", StringComparison.Ordinal) >= 0 ||
+                    message.IndexOf("0x80010108", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    message.IndexOf("被调用方", StringComparison.Ordinal) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>判断错误消息是否属于 COM 断连。</summary>
+        internal static bool LooksLikeComDisconnected(string message)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                return false;
+            }
+
+            return message.IndexOf("RPC", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   message.IndexOf("远程过程调用", StringComparison.Ordinal) >= 0 ||
+                   message.IndexOf("0x80010108", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   message.IndexOf("被调用方", StringComparison.Ordinal) >= 0;
+        }
+
+        // ---------------------------------------------------------------- 组版
 
         // ---------------------------------------------------------------- 组版
 

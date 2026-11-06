@@ -1506,7 +1506,7 @@
     if (showVector) {
       el.exportNote.textContent = vec.unsupported
         ? '当前 EMF 子图使用了裁剪/旋转/偏移，无法走矢量模式；可恢复默认的“适应”显示后再导出。'
-        : 'PDF 将优先使用矢量模式（保留 ' + vec.count + ' 张 EMF 的线条与文字），需桌面版 PowerPoint；失败会自动回退为高分辨率位图 PDF。';
+        : 'PDF 将优先使用矢量模式（保留 ' + vec.count + ' 张 EMF 的线条与文字），需桌面版 PowerPoint；首次启动较慢，之后会复用 PowerPoint 会话。失败会自动回退为高分辨率位图 PDF。';
     } else if (format === 'pdf' && allPages && vec.count > 0) {
       el.exportNote.textContent = '全部图页导出暂用多页位图 PDF（矢量模式先支持当前页）；如需矢量可逐页导出。';
     }

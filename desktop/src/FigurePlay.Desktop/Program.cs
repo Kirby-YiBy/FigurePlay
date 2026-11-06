@@ -59,6 +59,16 @@ namespace FigurePlay.Desktop
                 ReportFatal(options, ex);
             }
 
+            // 兜底：进程退出前显式关闭自己启动的 PowerPoint 实例（绝不关闭用户原有实例）。
+            try
+            {
+                FigurePlay.Desktop.Bridge.PowerPointHost.Shutdown();
+            }
+            catch
+            {
+                // ignore
+            }
+
             Environment.ExitCode = exitCode;
             return exitCode;
         }

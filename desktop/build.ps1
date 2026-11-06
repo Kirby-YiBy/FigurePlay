@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.3.2-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.3.2-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.3.3-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.3.3-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -222,6 +222,11 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
         else {
             Write-Info '应用矢量 E2E  : skipped（MATLAB .fig 不可用）'
         }
+    }
+    if ($report.powerPointLifecycle) {
+        $lc = $report.powerPointLifecycle
+        $lcResidual = @($lc.residualPids).Count
+        Write-Info ("PowerPoint会话: 冷={0}ms 热={1}ms 提速={2}% 实例创建={3}ms 残留POWERPNT={4} shutdownOk={5}" -f $lc.coldExportMs, $lc.hotExportMs, $lc.speedupPercent, $lc.instanceCreateMs, $lcResidual, $lc.shutdownOk)
     }
     if ($report.saveFilePicker) {
         Write-Info ("保存 API      : showSaveFilePicker={0} isSecureContext={1}" -f $report.saveFilePicker.hasShowSaveFilePicker, $report.saveFilePicker.isSecureContext)

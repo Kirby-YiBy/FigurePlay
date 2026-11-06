@@ -1132,12 +1132,13 @@ const negativeGapScenario = {
   code: 'V',
   name: 'negative-gap',
   title: '负间距',
-  description: '行/列间距支持 -50～80mm：UI #col-gap/#row-gap min=-50；API setLayoutOptions({colGap,rowGap}) 负值生效/夹取；面板重叠、cellW/页高变化；负间距下 PNG/PDF/trim 导出正常、无 pageerror',
+  description: '行/列间距支持 -50～80mm：UI #col-gap/#row-gap min=-50；API setLayoutOptions({colGap,rowGap}) 负值生效/夹取；面板重叠、cellW/页高变化；负间距下 PNG/PDF/trim 导出正常；v1.3.3 选中/悬停描边在 interaction-overlay-layer 最上层不被重叠遮挡，导出 SVG 不含交互元素',
   async run(ctx) {
     const { page } = ctx;
     await app.openAppReady(page);
     if (!(await app.ensureV13(ctx, page))) return;
     if (!(await app.ensureV132(ctx, page))) return;
+    if (!(await app.ensureV133(ctx, page))) return;
     await app.api.clearAll(page);
     await app.api.setLayout(page, 2, 2);
     await app.setLayoutOptions(page, { margin: 0, colGap: 0, rowGap: 0 });
@@ -1208,6 +1209,137 @@ const negativeGapScenario = {
     const geomExp = infoExport.geom;
     const px = app.expectedPixelSize(geomExp, 150);
 
+    // ---------- v1.3.3 交互 overlay：负间距重叠下选中/悬停描边在顶层 ----------
+    await app.setMultiSelect(page, []);
+    await app.clearPreviewHover(page);
+    let overlay = await app.getOverlayState(page);
+    const overlayChildCount = overlay.children.length;
+    ctx.check('v1.3.3：#preview-svg 最后一个子元素是 .interaction-overlay-layer',
+      /interaction-overlay-layer/.test(overlay.lastChildClass)
+      && overlay.overlayIndex === overlayChildCount - 1
+      && overlay.overlayIndex > overlay.cellsIndex
+      && overlay.overlayIndex > overlay.groupsIndex
+      && overlay.overlayIndex > overlay.labelsIndex,
+      { children: overlay.children, lastChildClass: overlay.lastChildClass });
+    ctx.check('v1.3.3：overlay 层 pointer-events=none（不拦截交互）',
+      overlay.overlayPointerEvents === 'none', overlay.overlayPointerEvents);
+    ctx.check('v1.3.3：初始无选中/悬停描边（切换选择前）',
+      overlay.selectionOutlines.length === 0 && overlay.hoverOutlines.length === 0,
+      { selection: overlay.selectionOutlines.length, hover: overlay.hoverOutlines.length });
+
+    // 选中 panel0：描边在 overlay 层
+    await app.selectCell(page, 0);
+    overlay = await app.waitOverlayState(page, (state) => state.selectionOutlines.length === 1,
+      null, { label: 'selection outline panel0' });
+    const panel0Info = panels1.find((panel) => panel.index === 0);
+    const selection0 = overlay.selectionOutlines[0];
+    ctx.check('负间距下选中 panel0：.cell-selection-outline 位置/尺寸=panel0',
+      !!selection0 && Math.abs(selection0.x - panel0Info.x) < 0.05
+      && Math.abs(selection0.y - panel0Info.y) < 0.05
+      && Math.abs(selection0.w - panel0Info.w) < 0.05
+      && Math.abs(selection0.h - panel0Info.h) < 0.05
+      && selection0.stroke === '#2563eb',
+      { outline: selection0, panel: panel0Info });
+    ctx.check('选中描边位于顶层 overlay 层内（最后一层，不被重叠子图遮挡）',
+      selection0.inOverlay === true && overlay.overlayIndex === overlay.children.length - 1,
+      { inOverlay: selection0.inOverlay, overlayIndex: overlay.overlayIndex, childCount: overlay.children.length });
+
+    // 悬停重叠区（panel0∩panel1）→ hover outline 出现且选中描边仍在
+    const hoverPoint = await app.hoverPanel(page, 0, 1);
+    overlay = await app.waitOverlayState(page,
+      (state) => state.selectionOutlines.length === 1 && state.hoverOutlines.length === 1,
+      null, { label: 'hover outline overlap' });
+    const panel1Info = panels1.find((panel) => panel.index === 1);
+    const hover0 = overlay.hoverOutlines[0];
+    ctx.check('重叠区悬停产生 .cell-hover-outline（bbox=可见 panel1，虚线样式）',
+      !!hover0 && Math.abs(hover0.x - panel1Info.x) < 0.05
+      && Math.abs(hover0.y - panel1Info.y) < 0.05
+      && Math.abs(hover0.w - panel1Info.w) < 0.05
+      && Math.abs(hover0.h - panel1Info.h) < 0.05
+      && hover0.stroke === '#60a5fa',
+      { hover: hover0, panel: panel1Info, point: hoverPoint });
+    ctx.check('选中+悬停描边同时在 overlay 顶层（互不遮挡）',
+      overlay.selectionOutlines.every((outline) => outline.inOverlay)
+      && overlay.hoverOutlines.every((outline) => outline.inOverlay)
+      && overlay.overlayIndex === overlay.children.length - 1,
+      { selection: overlay.selectionOutlines.length, hover: overlay.hoverOutlines.length });
+
+    // 多选：Ctrl+点击 panel2 → 两个 selection outline
+    await page.keyboard.down('Control');
+    await page.locator('#preview-svg .cell-hit[data-index="2"]').click();
+    await page.keyboard.up('Control');
+    overlay = await app.waitOverlayState(page, (state) => state.selectionOutlines.length === 2,
+      null, { label: 'multi selection outlines' });
+    const multiPanels = [0, 2].map((index) => panels1.find((panel) => panel.index === index));
+    const multiMatch = multiPanels.every((panel) => overlay.selectionOutlines.some((outline) =>
+      Math.abs(outline.x - panel.x) < 0.05 && Math.abs(outline.y - panel.y) < 0.05
+      && Math.abs(outline.w - panel.w) < 0.05 && Math.abs(outline.h - panel.h) < 0.05));
+    ctx.check('多选 panel0+panel2：overlay 生成 2 个 selection outline 且 bbox 匹配',
+      overlay.selectionOutlines.length === 2 && multiMatch,
+      { outlines: overlay.selectionOutlines.map((o) => ({ x: o.x, y: o.y, w: o.w, h: o.h })) });
+    const overlayEvidence = {
+      childClasses: overlay.children.map((item) => item.class),
+      lastChildClass: overlay.lastChildClass,
+      overlayIndex: overlay.overlayIndex,
+      overlayPointerEvents: overlay.overlayPointerEvents,
+      singleSelection: selection0,
+      hover: hover0,
+      multiSelectionCount: overlay.selectionOutlines.length,
+    };
+
+    // 切换单选 panel3：只保留 1 个 outline
+    await app.selectCell(page, 3);
+    overlay = await app.waitOverlayState(page, (state) => state.selectionOutlines.length === 1
+      && state.selectedCell === 3, null, { label: 'selection switch panel3' });
+    ctx.check('切换选择到 panel3：overlay 仅 1 个 selection outline（旧描边清理）',
+      overlay.selectionOutlines.length === 1 && overlay.selectedCell === 3,
+      { selectedCell: overlay.selectedCell, outlines: overlay.selectionOutlines.length });
+
+    // 鼠标离开预览 SVG：hover outline 消失、选中描边保留
+    await app.clearPreviewHover(page);
+    overlay = await app.waitOverlayState(page, (state) => state.hoverOutlines.length === 0,
+      null, { label: 'hover cleared' });
+    ctx.check('hover 离开 SVG 后 hover outline 消失，selection outline 保留',
+      overlay.hoverOutlines.length === 0 && overlay.selectionOutlines.length === 1,
+      { hover: overlay.hoverOutlines.length, selection: overlay.selectionOutlines.length });
+
+    // 导出 SVG：交互元素不进入导出（当前有选中+悬停状态）
+    await app.selectCell(page, 0);
+    await app.hoverPanel(page, 0, 1);
+    await app.waitOverlayState(page, (state) => state.hoverOutlines.length === 1,
+      null, { label: 'hover before export' });
+    await app.waitOverlayState(page, (state) => state.selectionOutlines.length === 1,
+      null, { label: 'selection before export' });
+    const exportSvg = await app.exportSvgString(page, {
+      filename: 'fp-v133-neg-gap-overlay', transparent: false,
+    }, ctx.exportsDir);
+    const svgText = exportSvg.text || '';
+    ctx.check('导出 SVG 不含交互 overlay/选中/悬停元素',
+      !/interaction-overlay-layer/.test(svgText)
+      && !/cell-selection-outline/.test(svgText)
+      && !/cell-hover-outline/.test(svgText)
+      && !/class="cell-hit"/.test(svgText)
+      && !/class="cell-outline"/.test(svgText)
+      && !/is-selected/.test(svgText),
+      {
+        overlay: /interaction-overlay-layer/.test(svgText),
+        selection: /cell-selection-outline/.test(svgText),
+        hover: /cell-hover-outline/.test(svgText),
+        textLength: svgText.length,
+      });
+    const exportSvgVerify = verifyExport('svg', exportSvg.path, {
+      expectWidthMm: round(geomExp.widthMm), expectHeightMm: round(geomExp.heightMm),
+      expectCells: 4, expectImages: 4, expectLabels: 4, expectBg: 'white', tolerance: 0.02,
+    });
+    addExportEvidence(ctx, {
+      label: '负间距+选中/悬停导出 SVG（无交互层）', format: 'svg', filename: exportSvg.filename,
+      path: exportSvg.path, size: exportSvg.size, verifierOk: exportSvgVerify.ok,
+      failedChecks: exportSvgVerify.failedChecks, verifier: exportSvgVerify.report,
+    });
+    ctx.check('导出 SVG 结构有效（尺寸/4 cells/4 images/4 labels）',
+      exportSvgVerify.ok, describeVerify(exportSvgVerify));
+    await ctx.screenshot('negative-gap-overlay');
+
     const png = await app.exportToFile(page, 'png', { dpi: 150, filename: 'fp-v132-neg-gap' }, ctx.exportsDir);
     const pngVerify = verifyExport('image', png.path, {
       expectWidth: px.width, expectHeight: px.height, expectFormat: 'png', minUniqueColors: 16,
@@ -1257,6 +1389,35 @@ const negativeGapScenario = {
         .every((side) => trimMargins[side] <= 1.6),
       trimMargins);
 
+    // 切换模板 / 页后 overlay 重建，不残留过期描边
+    await app.applyTemplate(page, 'double-2x3');
+    await app.waitFor(page, () => {
+      const geom = window.__FIGPLAY__.getPreviewInfo().geom;
+      return geom.rows === 2 && geom.cols === 3;
+    }, null, { timeout: 6000, label: 'template double-2x3' });
+    overlay = await app.getOverlayState(page);
+    const livePanels = overlay.cells;
+    const outlinesLive = overlay.selectionOutlines.concat(overlay.hoverOutlines);
+    ctx.check('切换模板后 overlay 重建仍为 #preview-svg 最后子层',
+      /interaction-overlay-layer/.test(overlay.lastChildClass)
+      && overlay.overlayIndex === overlay.children.length - 1,
+      { lastChildClass: overlay.lastChildClass, childCount: overlay.children.length });
+    ctx.check('切换模板后无陈旧描边（outline 均对应现存面板）',
+      outlinesLive.every((outline) => livePanels.some((panel) =>
+        Math.abs(outline.x - panel.x) < 0.05 && Math.abs(outline.y - panel.y) < 0.05
+        && Math.abs(outline.w - panel.w) < 0.05 && Math.abs(outline.h - panel.h) < 0.05)),
+      { outlines: outlinesLive.length, panels: livePanels.length });
+    await app.addPage(page, 'new');
+    await app.setPage(page, 1);
+    await app.setPage(page, 0);
+    await page.waitForTimeout(150);
+    overlay = await app.getOverlayState(page);
+    ctx.check('切换页后 overlay 仍为最后子层，描边不残留过期面板',
+      /interaction-overlay-layer/.test(overlay.lastChildClass)
+      && overlay.overlayIndex === overlay.children.length - 1
+      && overlay.selectionOutlines.concat(overlay.hoverOutlines).every((outline) => outline.inOverlay),
+      { lastChildClass: overlay.lastChildClass, selection: overlay.selectionOutlines.length });
+
     ctx.evidence.negativeGap = {
       base: { gap: [0, 0], geom: geom0, cellW: geom0.cellW, cellH: geom0.cellH },
       negative: {
@@ -1270,7 +1431,9 @@ const negativeGapScenario = {
         png: { size: png.size, px: [px.width, px.height], ok: pngVerify.ok },
         pdf: { size: pdf.size, ok: pdfVerify.ok },
         trim: { size: trim.size, ink, margins: trimMargins, ok: trimVerify.ok },
+        overlaySvg: { size: exportSvg.size, ok: exportSvgVerify.ok, textLength: exportSvg.text.length },
       },
+      overlay: overlayEvidence,
     };
     await ctx.screenshot('negative-gap');
     await app.api.clearAll(page);

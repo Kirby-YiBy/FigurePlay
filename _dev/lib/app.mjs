@@ -2148,6 +2148,177 @@ export async function ensureV132(ctx, page, label = 'v1.3.2 契约') {
     && probe.safetyHintExists === true;
 }
 
+/* ==========================================================================
+ * v1.3.3 新增：交互描边顶层 overlay（负间距重叠下选中/悬停不被遮挡）
+ * ========================================================================== */
+
+export const V133_METHODS = ['getInkCropBox'];
+
+/** 读取 #preview-svg 子层顺序与 interaction-overlay-layer 内容 */
+export async function getOverlayState(page) {
+  return page.evaluate(() => {
+    const svg = document.getElementById('preview-svg');
+    if (!svg) return null;
+    const classesOf = (node) => (node && node.getAttribute) ? (node.getAttribute('class') || '') : '';
+    const children = Array.from(svg.children).map((node, i) => ({
+      index: i, tag: node.tagName.toLowerCase(), class: classesOf(node),
+    }));
+    const overlay = svg.querySelector(':scope > .interaction-overlay-layer');
+    const outlines = (selector) => Array.from(svg.querySelectorAll(selector)).map((node) => {
+      const box = node.getBBox ? node.getBBox() : { x: 0, y: 0, width: 0, height: 0 };
+      const style = window.getComputedStyle(node);
+      return {
+        class: classesOf(node),
+        x: Number(node.getAttribute('x')),
+        y: Number(node.getAttribute('y')),
+        w: Number(node.getAttribute('width')),
+        h: Number(node.getAttribute('height')),
+        bbox: { x: box.x, y: box.y, w: box.width, h: box.height },
+        stroke: node.getAttribute('stroke'),
+        strokeWidth: node.getAttribute('stroke-width'),
+        pointerEvents: style ? style.pointerEvents : null,
+        inOverlay: !!node.closest('.interaction-overlay-layer'),
+      };
+    });
+    const info = window.__FIGPLAY__.getPreviewInfo();
+    return {
+      children,
+      lastChildClass: classesOf(svg.lastElementChild),
+      lastChildIndex: svg.lastElementChild ? children.length - 1 : null,
+      overlayIndex: overlay ? children.findIndex((item) => /interaction-overlay-layer/.test(item.class)) : -1,
+      overlayPointerEvents: overlay ? window.getComputedStyle(overlay).pointerEvents : null,
+      groupsIndex: children.findIndex((item) => /groups-layer/.test(item.class)),
+      labelsIndex: children.findIndex((item) => /labels-layer/.test(item.class)),
+      cellsIndex: children.findIndex((item) => /cells-layer/.test(item.class)),
+      selectionOutlines: outlines('.cell-selection-outline'),
+      hoverOutlines: outlines('.cell-hover-outline'),
+      cellHits: svg.querySelectorAll('.cell-hit').length,
+      selectedCell: info.selectedCell,
+      multiSelect: info.multiSelect || [],
+      cells: (info.panels || []).map((panel) => ({ index: panel.index, x: panel.x, y: panel.y, w: panel.w, h: panel.h })),
+    };
+  });
+}
+
+/** 计算某个面板/两面板重叠中心在屏幕坐标的位置（用于真实鼠标移动触发 hover） */
+export async function getPanelScreenPoint(page, panelIndex, overlapWithIndex) {
+  return page.evaluate(([idx, overlapIdx]) => {
+    const svg = document.getElementById('preview-svg');
+    const info = window.__FIGPLAY__.getPreviewInfo();
+    const panels = info.panels || [];
+    const panel = panels.find((item) => item.index === idx);
+    if (!svg || !panel) return null;
+    let px = panel.x + panel.w / 2;
+    let py = panel.y + panel.h / 2;
+    if (overlapIdx != null) {
+      const other = panels.find((item) => item.index === overlapIdx);
+      if (other) {
+        const x0 = Math.max(panel.x, other.x);
+        const y0 = Math.max(panel.y, other.y);
+        const x1 = Math.min(panel.x + panel.w, other.x + other.w);
+        const y1 = Math.min(panel.y + panel.h, other.y + other.h);
+        if (x1 > x0 && y1 > y0) {
+          px = (x0 + x1) / 2;
+          py = (y0 + y1) / 2;
+        }
+      }
+    }
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const point = new DOMPoint(px, py).matrixTransform(ctm);
+    return { x: point.x, y: point.y, panel: { x: panel.x, y: panel.y, w: panel.w, h: panel.h } };
+  }, [panelIndex, overlapWithIndex]);
+}
+
+/** 将真实鼠标移到某面板中心/两面板重叠区中心 */
+export async function hoverPanel(page, panelIndex, overlapWithIndex) {
+  const point = await getPanelScreenPoint(page, panelIndex, overlapWithIndex);
+  if (!point) throw new Error(`hoverPanel 找不到屏幕坐标（panel ${panelIndex}）`);
+  await page.mouse.move(point.x, point.y);
+  await page.waitForTimeout(80);
+  return point;
+}
+
+/** 把鼠标移出预览 SVG（触发 pointerleave → hover outline 消失） */
+export async function clearPreviewHover(page) {
+  await page.mouse.move(4, 4);
+  await page.waitForTimeout(120);
+}
+
+/** 按指定顺序等待 overlay 内容变化（Node 侧轮询，避免页面闭包） */
+export async function waitOverlayState(page, predicate, arg, options = {}) {
+  const { timeout = 6000, label = 'overlay state' } = options;
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    const state = await getOverlayState(page);
+    try {
+      if (state && predicate(state, arg)) return state;
+    } catch (err) { /* ignore */ }
+    await page.waitForTimeout(80);
+  }
+  throw new Error(`等待超时（${label}, ${timeout}ms）`);
+}
+
+/** 导出 SVG 并返回文本（用于断言交互元素不进入导出） */
+export async function exportSvgString(page, overrides, exportDir) {
+  const result = await page.evaluate((opts) => window.__FIGPLAY__.exportBase64('svg', opts), overrides || null);
+  const text = Buffer.from(String(result.base64 || ''), 'base64').toString('utf8');
+  let filePath = null;
+  if (exportDir) {
+    await ensureDir(exportDir);
+    filePath = path.join(exportDir, result.filename || 'export.svg');
+    await fsp.writeFile(filePath, Buffer.from(String(result.base64 || ''), 'base64'));
+  }
+  return {
+    filename: result.filename, size: Buffer.byteLength(text, 'utf8'),
+    text, path: filePath,
+  };
+}
+
+/** 探测 v1.3.3 契约：版本 + 交互 overlay 顶层结构 */
+export async function probeV133(page) {
+  const state = await getOverlayState(page);
+  return page.evaluate(([methods, overlayState]) => {
+    const api = window.__FIGPLAY__;
+    return {
+      version: api ? api.version || null : null,
+      apiPresent: !!api,
+      missingMethods: methods.filter((name) => !api || typeof api[name] !== 'function'),
+      lastChildClass: overlayState ? overlayState.lastChildClass : null,
+      overlayIndex: overlayState ? overlayState.overlayIndex : null,
+      groupsIndex: overlayState ? overlayState.groupsIndex : null,
+      labelsIndex: overlayState ? overlayState.labelsIndex : null,
+      cellsIndex: overlayState ? overlayState.cellsIndex : null,
+      overlayPointerEvents: overlayState ? overlayState.overlayPointerEvents : null,
+      children: overlayState ? overlayState.children : null,
+    };
+  }, [V133_METHODS, state]);
+}
+
+/** 场景启动守卫：v1.3.3 交互 overlay 最上层契约 */
+export async function ensureV133(ctx, page, label = 'v1.3.3 契约') {
+  const probe = await probeV133(page);
+  ctx.evidence.v133Probe = probe;
+  const childCount = (probe.children || []).length;
+  ctx.check(`${label}：应用版本 >= 1.3.3（当前 ${probe.version || 'unknown'}）`,
+    /^1\.(?:3\.[3-9]|[4-9]\.|[1-9]\d)|^[2-9]\./.test(String(probe.version || '')), probe.version);
+  ctx.check(`${label}：#preview-svg 最后子元素是 .interaction-overlay-layer`,
+    /interaction-overlay-layer/.test(String(probe.lastChildClass || ''))
+      && probe.overlayIndex === childCount - 1,
+    { lastChildClass: probe.lastChildClass, overlayIndex: probe.overlayIndex, childCount });
+  ctx.check(`${label}：groups-layer / labels-layer / cells-layer 均在 overlay 之下`,
+    probe.cellsIndex >= 0 && probe.groupsIndex >= 0 && probe.labelsIndex >= 0
+      && probe.overlayIndex > probe.groupsIndex
+      && probe.overlayIndex > probe.labelsIndex
+      && probe.overlayIndex > probe.cellsIndex,
+    { children: probe.children });
+  ctx.check(`${label}：overlay 层 pointer-events=none（不拦截子图交互）`,
+    probe.overlayPointerEvents === 'none', probe.overlayPointerEvents);
+  ctx.note('v1.3.3 交互 overlay 契约探测（信息，非问题）', JSON.stringify(probe));
+  return probe.overlayIndex === childCount - 1 && probe.overlayPointerEvents === 'none';
+}
+
+
 
 
 
