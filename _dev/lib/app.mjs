@@ -2047,5 +2047,44 @@ export async function restoreSavePicker(page) {
   });
 }
 
+/* ==========================================================================
+ * v1.3.1 新增：按实际墨迹裁剪 PDF 白边（getInkCropBox）
+ * ========================================================================== */
+
+export const V131_METHODS = ['getInkCropBox'];
+
+export async function probeV131(page) {
+  return page.evaluate((methods) => {
+    const api = window.__FIGPLAY__;
+    const version = api ? api.version || null : null;
+    return {
+      version,
+      apiPresent: !!api,
+      missingMethods: methods.filter((name) => !api || typeof api[name] !== 'function'),
+      hasGetCropBox: !!(api && typeof api.getCropBox === 'function'),
+      hasInkApi: !!(api && typeof api.getInkCropBox === 'function'),
+    };
+  }, V131_METHODS);
+}
+
+/** 场景启动守卫：v1.3.1 墨迹裁剪契约（getInkCropBox 为 async API） */
+export async function ensureV131(ctx, page, label = 'v1.3.1 ink 契约') {
+  const probe = await probeV131(page);
+  ctx.evidence.v131Probe = probe;
+  ctx.check(`${label}：应用版本 >= 1.3.1（当前 ${probe.version || 'unknown'}）`,
+    /^1\.(?:3\.[1-9]|[4-9]\.|[1-9]\d)|^[2-9]\./.test(String(probe.version || '')), probe.version);
+  ctx.check(`${label}：getInkCropBox 可用（async ink bbox）`,
+    probe.missingMethods.length === 0, probe.missingMethods);
+  ctx.check(`${label}：getCropBox 保留（内容盒对照）`, probe.hasGetCropBox === true);
+  ctx.note('v1.3.1 墨迹裁剪契约探测（信息，非问题）', JSON.stringify(probe));
+  return probe.missingMethods.length === 0 && probe.hasGetCropBox === true;
+}
+
+/** 按实际墨迹检测 PDF 裁剪框（前端 96dpi 探针渲染 + 像素扫描），返回 {xMm,yMm,wMm,hMm} */
+export async function getInkCropBox(page, marginMm) {
+  return page.evaluate(async (margin) => window.__FIGPLAY__.getInkCropBox(margin), marginMm);
+}
+
+
 
 

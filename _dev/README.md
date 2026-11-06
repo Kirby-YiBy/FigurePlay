@@ -35,10 +35,12 @@ $py='C:\Users\DragonDance\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pyt
 
 # 4) E2E 场景测试
 #    v1.0 → A–F；v1.1 → G–L（合并/模板/批量编号/粘贴弹窗/桌面桥/高DPI）；
-#    v1.2 → M–O（多页/撤销重做/分组/多页导出/.fig）；v1.3 → P–U（网格/保存位置/加页距/PDF裁剪/数字输入/EMF矢量PDF）
+#    v1.2 → M–O（多页/撤销重做/分组/多页导出/.fig）；v1.3 → P–U（网格/保存位置/加页距/PDF裁剪/数字输入/EMF矢量PDF）；
+#    v1.3.1 → 同 P–U，S/U 改为按实际墨迹（ink）裁剪 PDF 白边
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --list
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=v13 --only=U     # 单场景（A..U）
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v13  # v1.3 正式：report-v1.3.md / screens-v1.3 / artifacts/e2e-v13/<run>
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v131 # v1.3.1 正式：report-v1.3.1.md / screens-v1.3.1 / artifacts/e2e-v131/<run>
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v13  # v1.3 历史产物：report-v1.3.md / screens-v1.3 / artifacts/e2e-v13
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v12  # v1.2 历史产物：report-v1.2.md / screens-v1.2 / artifacts/e2e-v12
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v11  # v1.1 历史产物：report-v1.1.md / shots-v1.1 / exports-v1.1
 
@@ -54,20 +56,22 @@ _dev/
   lib/browser.mjs              # 启动/页面/截图/下载/setInputFiles/诊断 helper
   lib/app.mjs                  # 应用契约 helper：__FIGPLAY__ API、预览 DOM、编号期望、自动保存、拖放；
                                #   v1.1：合并/模板/多选/批量编号/粘贴弹窗/桌面桥；v1.2：多页/撤销重做/分组/多页导出/.fig；
-                               #   v1.3：网格上限/保存位置 fake picker/autoPad/PDF 裁剪/数字输入/EMF 矢量 PDF
-  lib/verify.mjs               # 调用 Python 校验器（PNG/JPG/SVG/PDF/ZIP；SVG clip/像素探针/pdfinfo 页数）
+                               #   v1.3：网格上限/保存位置 fake picker/autoPad/PDF 裁剪/数字输入/EMF 矢量 PDF；v1.3.1：getInkCropBox
+  lib/verify.mjs               # 调用 Python 校验器（PNG/JPG/SVG/PDF/ZIP；SVG clip/像素探针/pdfinfo 页数/PDF 墨迹四边余量）
   scenarios.mjs                # v1.0 场景 A–F
   scenarios-v11.mjs            # v1.1 场景 G–L
   scenarios-v12.mjs            # v1.2 场景 M–O（多页/撤销重做/分组/多页导出/.fig）
-  scenarios-v13.mjs            # v1.3 场景 P–U（网格/保存位置/加页距/PDF裁剪/数字输入/EMF矢量PDF）
+  scenarios-v13.mjs            # v1.3 场景 P–U（S/U 已按 v1.3.1 ink 裁剪更新）
   contract-notes-v1.1.md       # v1.1 契约与假设记录
   contract-notes-v1.2.md       # v1.2 契约、冻结哈希、自动化假设记录
   contract-notes-v1.3.md       # v1.3 契约、冻结哈希、自动化假设记录
-  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|all，--only，--final/--final-v11/v12/v13
+  contract-notes-v1.3.1.md     # v1.3.1 ink 裁剪契约、冻结哈希与实测记录
+  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|all，--only，--final/--final-v11/v12/v13/v131
   report.md / shots/           # v1.0 正式报告与截图
   report-v1.1.md / shots-v1.1/ # v1.1 正式报告与截图
   report-v1.2.md / screens-v1.2/  # v1.2 正式报告与 17 张关键截图（--final-v12）
   report-v1.3.md / screens-v1.3/  # v1.3 正式报告与 24 张关键截图（--final-v13）
+  report-v1.3.1.md / screens-v1.3.1/  # v1.3.1 ink 裁剪正式报告与 24 张关键截图（--final-v131）
   smoke/upload-test.html       # file:// 能力验证页（window.smoke.*）
   smoke/run-smoke.mjs          # smoke 运行器 → artifacts/smoke-report.json
   tools/gen-samples.py         # 示例图片生成（samples/manifest.json 含尺寸/主色/缩略图/sha256）
@@ -84,6 +88,7 @@ _dev/
     exports-v1.1/              # 旧 v1.1 导出样例（历史证据已移出 E:）
     e2e-v12/<run>/             # v1.2 最终 run：results.json + exports/（18 个关键导出，空间受控）
     e2e-v13/<run>/             # v1.3 最终 run：results.json + exports/（28 个关键导出，空间受控）
+    e2e-v131/<run>/            # v1.3.1 最终 run：results.json + exports/（35 个关键导出，空间受控）
 ```
 
 ## E2E 场景 A–F（应用 FigurePlay v1.0.0 已通过）
@@ -153,6 +158,23 @@ A–F 229 + G–L 208 + M–O 101 + P–U 147 断言（合计 685）。产物整
 | S PDF 自动裁剪 | 默认 `trimPdf=false`；裁剪/边距控件仅 PDF 显示；`getCropBox(margin)` 内容 bbox；API+UI 导出 PDF MediaBox=bbox（±1mm、pdfinfo 1 页）；layout.margin=10 时裁剪后小于整页；trim 关闭保持整页尺寸 |
 | T 滑块数字输入 | `#cell-zoom-num`（20–400%）、`#jpg-quality-num`（60–100%）、`#label-bg-opacity-num`（0–100%）数字输入同步滑块与状态、越界夹取、滑块反向同步数字框 |
 | U EMF 矢量 PDF | 桌面桥 mock `.fig` 带 `emfBase64`→`getVectorStatus().emfCount=1`；PDF 下 `#vector-pdf-row` 显示；`export-vector-pdf` spec 含 crop/panels（image.kind='emf'）/labels；mock 回 base64 PDF 写 fake 文件；mock 错误回退位图 PDF、状态栏提示，0 pageerror |
+
+> v1.3.1 已将 S/U 的 PDF 裁剪从「内容盒」改为「实际墨迹 bbox（getInkCropBox）」，旧 S/U 尺寸/crop 期望已更新；见下节。
+
+## E2E v1.3.1 按实际墨迹裁剪 PDF 白边（应用 v1.3.1 已通过）
+
+命令：`& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v131`（v1.0 回归 + v1.1 + v1.2 + v1.3 + v1.3.1 全量，正式产物
+`_dev/report-v1.3.1.md`、`_dev/screens-v1.3.1/`、`_dev/artifacts/e2e-v131/<run>/`）。
+
+最终状态（2026-11-06，run `2026-11-06_05-30-11-336`）：**21/21 场景 PASS，708/708 断言 PASS，0 失败项**；
+A–F 229 + G–L 208 + M–O 101 + P–U 170（P23/Q24/R25/**S42**/T22/**U34**）合计 708。产物整包 18.89MB（<20MB 预算），截图 24 张。
+应用源冻结哈希（完整 sha256）程序核对 ALL MATCH，见 [`contract-notes-v1.3.1.md`](contract-notes-v1.3.1.md)。
+
+| 场景 | v1.3.1 覆盖点 |
+| --- | --- |
+| S PDF 墨迹裁剪 | `getInkCropBox`（96dpi 探针扫描）与 `getCropBox` 内容盒并存对照；margin=10：整页 170×133→ink 150.3×113.2mm，留边0 裁剪 PDF 的 pdftoppm 渲染**四边非白余量 0/0/0/0mm（≤1.5mm）**；留边2mm 余量 1.85–2.12mm；UI 导出同样按 ink；trim 关闭保留整页与 ≥5mm 白边；**letterbox（16:9 面板+4:3 图）** ink 127.8×92.1mm，裁剪后四边 ≤1.5mm、未裁剪左右保留 21mm 白边 |
+| U EMF 矢量 PDF | trim 时 `export-vector-pdf` 的 `spec.crop≈getInkCropBox`（±0.5mm，含 inkPx/pagePx 证明来自 ink 检测）；其余 mock 成功/失败回退断言保留 |
+| 验证器 | `verify-exports.py --kind pdf --max-ink-margin-mm 1.5 --render-dpi 96` 用 pdftoppm+PIL 实测四边墨迹余量并逐边断言；selftest 26 项 PASS |
 
 ## smoke 已验证结论（Chrome 156 headless，file:// 无任何放宽启动参数）
 

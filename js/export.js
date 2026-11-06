@@ -235,6 +235,84 @@
     };
   };
 
+  /**
+   * 按实际像素墨迹测量内容包围盒，用于真正裁掉图片内部的白色留边
+   * （仅按面板矩形裁剪会保留 MATLAB 图自身的白底/坐标区留白）。
+   */
+  FP.measureInkBox = function (canvas, background, marginMm, dpi, tolerance) {
+    const w = canvas.width;
+    const h = canvas.height;
+    const full = { xMm: 0, yMm: 0, wMm: 0, hMm: 0 };
+    if (!w || !h) return full;
+    const bg = (function parse(value) {
+      const s = String(value || '#ffffff').replace('#', '');
+      if (s.length !== 6) return { r: 255, g: 255, b: 255 };
+      return {
+        r: parseInt(s.slice(0, 2), 16),
+        g: parseInt(s.slice(2, 4), 16),
+        b: parseInt(s.slice(4, 6), 16)
+      };
+    })(background);
+    const tol = Math.max(2, Number(tolerance) || 12);
+    let data;
+    try {
+      data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    } catch (err) {
+      return full;
+    }
+    let minX = w;
+    let minY = h;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < h; y++) {
+      const row = y * w * 4;
+      for (let x = 0; x < w; x++) {
+        const i = row + x * 4;
+        if (data[i + 3] === 0) continue;
+        if (Math.abs(data[i] - bg.r) > tol ||
+          Math.abs(data[i + 1] - bg.g) > tol ||
+          Math.abs(data[i + 2] - bg.b) > tol) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) {
+      return { xMm: 0, yMm: 0, wMm: 0, hMm: 0 };
+    }
+    const pxPerMm = Math.max(1, Number(dpi) || 96) / 25.4;
+    const pad = Math.max(0, Number(marginMm) || 0) * pxPerMm;
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(w - 1, maxX + pad);
+    maxY = Math.min(h - 1, maxY + pad);
+    const r = function (v) { return Math.round(v * 10) / 10; };
+    return {
+      xMm: r(minX / pxPerMm),
+      yMm: r(minY / pxPerMm),
+      wMm: r((maxX - minX + 1) / pxPerMm),
+      hMm: r((maxY - minY + 1) / pxPerMm),
+      inkPx: { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 },
+      pagePx: { w: w, h: h }
+    };
+  };
+
+  /**
+   * 渲染低分辨率探针图，按墨迹检测实际内容边界（用于 PDF 白边裁剪）。
+   */
+  FP.detectInkCrop = async function (state, geom, opts) {
+    opts = opts || {};
+    const dpi = Math.max(48, Math.min(300, Number(opts.dpi) || 96));
+    const background = opts.background || FP.figureBackgroundColor(state) || '#ffffff';
+    const canvas = await FP.renderCanvas(state, geom, dpi, {
+      transparent: false,
+      background: background
+    });
+    return FP.measureInkBox(canvas, background, opts.marginMm || 0, dpi, opts.tolerance);
+  };
+
   /** 构建并立即下载。 */
   FP.exportFigure = async function (state, geom, opts) {
     const result = await FP.buildExport(state, geom, opts);

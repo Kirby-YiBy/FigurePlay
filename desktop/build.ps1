@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.3.0-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.3.0-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.3.1-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.3.1-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -200,6 +200,17 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
             $appPageW = $report.appVectorE2E.checks.pageWidthPt
             $appPageH = $report.appVectorE2E.checks.pageHeightPt
             Write-Info ("应用矢量 E2E  : ok={0} 页面={1}x{2}pt 位图数={3} 标签={4}（导入 {5} ms / 导出 {6} ms）" -f $report.appVectorE2E.ok, $appPageW, $appPageH, $report.appVectorE2E.checks.imageCount, $report.appVectorE2E.checks.labelTextOk, $report.appVectorE2E.importMs, $report.appVectorE2E.exportMs)
+            if ($report.appVectorE2E.trim) {
+                $trimOk = $report.appVectorE2E.trim.ok
+                $trimW = $report.appVectorE2E.trim.checks.cropWidthMm
+                $trimH = $report.appVectorE2E.trim.checks.cropHeightMm
+                $trimMax = $report.appVectorE2E.trim.checks.maxMarginMm
+                $trimPW = $report.appVectorE2E.trim.checks.pageWidthPt
+                $trimPH = $report.appVectorE2E.trim.checks.pageHeightPt
+                $trimOutW = if ($trimPW) { [math]::Round($trimPW / 72 * 25.4, 1) } else { 0 }
+                $trimOutH = if ($trimPH) { [math]::Round($trimPH / 72 * 25.4, 1) } else { 0 }
+                Write-Info ("  墨迹裁剪 trim : ok={0} app crop={1}x{2}mm 输出={3}x{4}mm 白边max={5}mm 位图数={6}（{7} ms）" -f $trimOk, $trimW, $trimH, $trimOutW, $trimOutH, $trimMax, $report.appVectorE2E.trim.checks.imageCount, $report.appVectorE2E.trim.trimExportMs)
+            }
         }
         else {
             Write-Info '应用矢量 E2E  : skipped（MATLAB .fig 不可用）'
@@ -379,7 +390,7 @@ Write-Step '复制最新网页应用到 dist\wwwroot'
 $wwwroot = Join-Path $distDir 'wwwroot'
 New-Item -ItemType Directory -Path $wwwroot -Force | Out-Null
 
-$excludeNames = @('_dev', 'docs', 'desktop', 'README.md', '启动FigurePlay.bat', '启动FigurePlay桌面版.bat', '.git', '.gitignore')
+$excludeNames = @('_dev', 'docs', 'desktop', 'README.md', '启动FigurePlay.bat', '启动FigurePlay桌面版.bat', '.git', '.gitignore', '.gitattributes')
 $copied = 0
 $totalBytes = 0
 Get-ChildItem -Path $AppSource -Force | Where-Object { $excludeNames -notcontains $_.Name } | ForEach-Object {
@@ -481,8 +492,10 @@ FigurePlay 桌面版（Windows 10/11 x64）
 
 矢量 PDF 导出（需 Microsoft PowerPoint）
  当页面中的子图来自 EMF / .fig（矢量）时，可导出真正的矢量 PDF（放大不糊），
- 并支持可选“自动裁剪白边”（crop）。要求本机安装桌面版 PowerPoint 2016 或更高版本；
- 第一次导出需要 20–40 秒（PowerPoint 启动较慢），属正常现象。
+ 并支持可选“自动裁剪白边”（crop）。开启裁剪时，桌面版还会用 PowerPoint 实际渲染结果
+ 再做一次墨迹校正（把四周残余白边压到 ≤0.5mm），避免 PPT 导出后仍留白。
+ 要求本机安装桌面版 PowerPoint 2016 或更高版本；第一次导出需要 20–40 秒
+ （PowerPoint 启动较慢），属正常现象；超时上限 120 秒。
  没有 PowerPoint 时会自动回退为高分辨率位图 PDF。
 
 保存位置

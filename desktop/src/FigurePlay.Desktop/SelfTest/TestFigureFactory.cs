@@ -163,5 +163,66 @@ namespace FigurePlay.Desktop.SelfTest
 
             return emfBytes;
         }
+
+        /// <summary>
+        /// 生成“实心填满画布”的真实 EMF（400×300，背景与图形覆盖整个 frame）。
+        /// 用于矢量 PDF 墨迹裁剪测试：ink bbox 应等于页面，二次校正不会缩小页面。
+        /// </summary>
+        public static byte[] CreateSolidEmfBytes()
+        {
+            Metafile metafile = null;
+            try
+            {
+                using (Graphics reference = Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    IntPtr hdc = reference.GetHdc();
+                    try
+                    {
+                        Rectangle frame = new Rectangle(0, 0, 400, 300);
+                        metafile = new Metafile(
+                            hdc,
+                            frame,
+                            MetafileFrameUnit.Pixel,
+                            EmfType.EmfOnly,
+                            "FigurePlay solid fill EMF");
+                        using (Graphics graphics = Graphics.FromImage(metafile))
+                        {
+                            graphics.FillRectangle(new SolidBrush(Color.FromArgb(30, 41, 59)), frame);
+                            using (Pen pen = new Pen(Color.FromArgb(37, 99, 235), 6f))
+                            {
+                                graphics.DrawLine(pen, 12f, 12f, 388f, 288f);
+                                graphics.DrawRectangle(pen, 40f, 60f, 160f, 120f);
+                            }
+                        }
+
+                        byte[] emfBytes;
+                        if (!EmfValidator.TryGetEmfBytesFromMetafile(metafile, out emfBytes))
+                        {
+                            throw new InvalidOperationException("无法从实心测试 Metafile 提取真实 EMF 字节。");
+                        }
+
+                        return emfBytes;
+                    }
+                    finally
+                    {
+                        reference.ReleaseHdc(hdc);
+                    }
+                }
+            }
+            finally
+            {
+                if (metafile != null)
+                {
+                    try
+                    {
+                        metafile.Dispose();
+                    }
+                    catch
+                    {
+                        // 提取 EMF 字节后 Metafile 可能已失效，忽略
+                    }
+                }
+            }
+        }
     }
 }

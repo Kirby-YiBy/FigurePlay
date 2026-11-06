@@ -183,6 +183,8 @@ namespace FigurePlay.Desktop.Bridge
                 }
 
                 panel.ImageBytes = imageBytes;
+                panel.ImageWidthPx = GetDouble(image, "width", 0);
+                panel.ImageHeightPx = GetDouble(image, "height", 0);
                 if (panel.Kind == "emf")
                 {
                     if (!EmfValidator.LooksLikeEmf(imageBytes))
@@ -360,6 +362,11 @@ namespace FigurePlay.Desktop.Bridge
         public string Kind { get; set; } = "emf";
 
         public byte[] ImageBytes { get; set; }
+
+        /// <summary>应用侧提供的前端显示像素宽高（用于 contain 时保持预览一致的比例）。</summary>
+        public double ImageWidthPx { get; set; }
+
+        public double ImageHeightPx { get; set; }
 
         public string Fit { get; set; } = "contain";
 

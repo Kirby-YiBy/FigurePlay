@@ -344,7 +344,8 @@ namespace FigurePlay.Desktop
                         result.PdfBytes.Length,
                         result.Engine,
                         result.VectorPanels,
-                        result.RasterPanels)
+                        result.RasterPanels,
+                        result.Diagnostics)
                     : BridgeProtocol.BuildVectorPdfError(requestId, result.Error);
                 PostJsonToJs(json);
             }

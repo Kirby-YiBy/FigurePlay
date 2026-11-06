@@ -1402,8 +1402,7 @@
         extra = ' · PDF 页面 ' + FP.fmt(geom.widthMm, 1) + ' × ' + FP.fmt(geom.heightMm, 1) + ' mm';
       }
       if (state.export.trimPdf) {
-        const crop = FP.computeContentBBox(state, geom, state.export.trimMarginMm);
-        extra += ' · 裁剪后 ' + FP.fmt(crop.wMm, 1) + ' × ' + FP.fmt(crop.hMm, 1) + ' mm';
+        extra += ' · 自动裁剪白边（按实际内容墨迹，保留 ' + FP.fmt(state.export.trimMarginMm, 1) + ' mm）';
       }
     }
     if (total > 80e6) extra += ' <span class="warn">（像素较多，导出可能较慢）</span>';
@@ -2377,7 +2376,7 @@
   }
 
   /** 构造交给桌面版 PowerPoint 矢量排版引擎的当前页 spec。 */
-  function buildVectorPdfSpec() {
+  function buildVectorPdfSpec(cropOverride) {
     if (!(FP.desktop && FP.desktop.available)) return { ok: false, reason: '需要桌面版 FigurePlay' };
     if (state.export.vectorPdf === false) return { ok: false, reason: '已关闭矢量 PDF' };
     if (state.export.scope === 'all' && project.pages.length > 1) {
@@ -2459,7 +2458,7 @@
         widthMm: geom.widthMm,
         heightMm: geom.heightMm,
         background: state.layout.bgMode === 'custom' ? state.layout.bgColor : '#ffffff',
-        crop: state.export.trimPdf ? FP.computeContentBBox(state, geom, state.export.trimMarginMm) : null,
+        crop: cropOverride || (state.export.trimPdf ? FP.computeContentBBox(state, geom, state.export.trimMarginMm) : null),
         panels: panels,
         labels: labels
       },
@@ -2503,9 +2502,43 @@
       const start = performance.now();
       let result = null;
       let vectorFallback = false;
+      let trimCrop = null;
+      let trimCrops = null;
+      if (state.export.trimPdf && format === 'pdf') {
+        setStatus('正在检测实际内容边界（白边裁剪）…');
+        try {
+          if (allPages) {
+            trimCrops = await Promise.all(project.pages.map(function (page) {
+              return FP.detectInkCrop(page, FP.computeGeometry(page.layout), {
+                dpi: 96,
+                marginMm: state.export.trimMarginMm
+              });
+            }));
+            trimCrops = trimCrops.map(function (crop) {
+              return crop && crop.wMm > 0 ? crop : null;
+            });
+          } else {
+            trimCrop = await FP.detectInkCrop(state, geom, {
+              dpi: 96,
+              marginMm: state.export.trimMarginMm
+            });
+            if (!trimCrop || trimCrop.wMm <= 0) trimCrop = null;
+          }
+        } catch (trimErr) {
+          console.warn('[FigurePlay] 墨迹边界检测失败，回退内容盒裁剪', trimErr);
+        }
+        if (!allPages && !trimCrop) {
+          trimCrop = FP.computeContentBBox(state, geom, state.export.trimMarginMm);
+        }
+        if (allPages && !trimCrops) {
+          trimCrops = project.pages.map(function (page) {
+            return FP.computeContentBBox(page, FP.computeGeometry(page.layout), state.export.trimMarginMm);
+          });
+        }
+      }
       if (hasUsableVectorPdf()) {
         setStatus('正在用 PowerPoint 生成矢量 PDF…');
-        const vec = buildVectorPdfSpec();
+        const vec = buildVectorPdfSpec(trimCrop);
         if (vec.ok) {
           try {
             const r = await FP.desktop.exportVectorPdf(vec.spec);
@@ -2543,9 +2576,9 @@
             };
           });
           const crops = state.export.trimPdf
-            ? project.pages.map(function (page) {
+            ? (trimCrops || project.pages.map(function (page) {
                 return FP.computeContentBBox(page, FP.computeGeometry(page.layout), state.export.trimMarginMm);
-              })
+              }))
             : null;
           result = await FP.buildAllPagesExport(pageStates, {
             format: format,
@@ -2560,7 +2593,7 @@
           });
         } else {
           const cropMm = state.export.trimPdf
-            ? FP.computeContentBBox(state, geom, state.export.trimMarginMm)
+            ? (trimCrop || FP.computeContentBBox(state, geom, state.export.trimMarginMm))
             : null;
           result = await FP.buildExport(state, geom, {
             format: format,
@@ -3704,7 +3737,19 @@
         };
       },
       exportVectorPdfBase64: async function () {
-        const vec = buildVectorPdfSpec();
+        let cropOverride = null;
+        if (state.export.trimPdf && !(state.export.scope === 'all' && project.pages.length > 1)) {
+          try {
+            cropOverride = await FP.detectInkCrop(state, geom, {
+              dpi: 96,
+              marginMm: state.export.trimMarginMm
+            });
+            if (!cropOverride || cropOverride.wMm <= 0) cropOverride = null;
+          } catch (err) {
+            console.warn('[FigurePlay] 矢量 PDF 墨迹裁剪检测失败', err);
+          }
+        }
+        const vec = buildVectorPdfSpec(cropOverride);
         if (!vec.ok) return { ok: false, error: vec.reason };
         const result = await FP.desktop.exportVectorPdf(vec.spec);
         return {
@@ -3743,6 +3788,12 @@
       getPadInfo: getPadInfo,
       getCropBox: function (marginMm) {
         return FP.computeContentBBox(state, geom, marginMm === undefined ? state.export.trimMarginMm : marginMm);
+      },
+      getInkCropBox: async function (marginMm) {
+        return FP.detectInkCrop(state, geom, {
+          dpi: 96,
+          marginMm: marginMm === undefined ? state.export.trimMarginMm : marginMm
+        });
       },
       setUploadTarget: function (index) {
         pendingTarget = index == null ? null : (panelAt(FP.toInt(index, 0)) ? FP.toInt(index, 0) : null);
@@ -3804,27 +3855,42 @@
       exportBase64: async function (format, overrides) {
         overrides = overrides || {};
         if (overrides.trimPdf && format === 'pdf' && !overrides.allPages) {
-          overrides = Object.assign({}, overrides, {
-            cropMm: FP.computeContentBBox(state, geom, overrides.trimMarginMm !== undefined
-              ? overrides.trimMarginMm : state.export.trimMarginMm)
-          });
+          let crop = null;
+          try {
+            crop = await FP.detectInkCrop(state, geom, {
+              dpi: 96,
+              marginMm: overrides.trimMarginMm !== undefined ? overrides.trimMarginMm : state.export.trimMarginMm
+            });
+          } catch (err) { console.warn('[FigurePlay] 墨迹裁剪检测失败', err); }
+          if (!crop || crop.wMm <= 0) {
+            crop = FP.computeContentBBox(state, geom, overrides.trimMarginMm !== undefined
+              ? overrides.trimMarginMm : state.export.trimMarginMm);
+          }
+          overrides = Object.assign({}, overrides, { cropMm: crop });
           delete overrides.trimPdf;
           delete overrides.trimMarginMm;
         }
         if (overrides.allPages) {
           const crops = overrides.trimPdf && format === 'pdf'
-            ? project.pages.map(function (page) {
-                return FP.computeContentBBox(page, FP.computeGeometry(page.layout),
-                  overrides.trimMarginMm !== undefined ? overrides.trimMarginMm : state.export.trimMarginMm);
-              })
+            ? await Promise.all(project.pages.map(function (page) {
+                return FP.detectInkCrop(page, FP.computeGeometry(page.layout), {
+                  dpi: 96,
+                  marginMm: overrides.trimMarginMm !== undefined ? overrides.trimMarginMm : state.export.trimMarginMm
+                }).catch(function () { return null; });
+              }))
             : null;
+          const safeCrops = crops && crops.map(function (crop, i) {
+            if (crop && crop.wMm > 0) return crop;
+            return FP.computeContentBBox(project.pages[i], FP.computeGeometry(project.pages[i].layout),
+              overrides.trimMarginMm !== undefined ? overrides.trimMarginMm : state.export.trimMarginMm);
+          });
           const result = await FP.buildAllPagesExport(pageStatesForExport(), {
             format: format,
             dpi: overrides.dpi !== undefined ? overrides.dpi : state.export.dpi,
             quality: overrides.quality !== undefined ? overrides.quality : state.export.jpgQuality,
             transparent: overrides.transparent !== undefined ? overrides.transparent : state.export.transparent,
             filename: overrides.filename !== undefined ? overrides.filename : state.export.filename,
-            crops: crops
+            crops: safeCrops
           });
           const base64 = await FP.blobToBase64(result.blob);
           return {

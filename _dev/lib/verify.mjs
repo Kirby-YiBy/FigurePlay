@@ -60,6 +60,8 @@ export function verifyExport(kind, file, options = {}) {
     pushFlag(args, '--render-dir', options.renderDir);
     pushFlag(args, '--render-prefix', options.renderPrefix);
     pushFlag(args, '--render-dpi', options.renderDpi);
+    pushFlag(args, '--max-ink-margin-mm', options.maxInkMarginMm);
+    pushFlag(args, '--ink-tolerance', options.inkTolerance);
   } else if (kind === 'zip') {
     pushFlag(args, '--expect-entries', options.expectEntries);
     pushFlag(args, '--expect-ext', options.expectExt);

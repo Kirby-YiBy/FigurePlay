@@ -7,11 +7,11 @@ using System.Threading.Tasks;
 namespace FigurePlay.Desktop.Bridge
 {
     /// <summary>
-    /// 在专用 STA 线程执行 PowerPoint COM 矢量 PDF 导出（串行化），60 秒超时兜底。
+    /// 在专用 STA 线程执行 PowerPoint COM 矢量 PDF 导出（串行化），120 秒超时兜底。
     /// </summary>
     internal sealed class VectorPdfService : IDisposable
     {
-        public const int TimeoutMs = 60000;
+        public const int TimeoutMs = 120000;
 
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
         private bool _disposed;
@@ -64,7 +64,7 @@ namespace FigurePlay.Desktop.Bridge
                     // 超时：结束本次新启动的 PowerPoint 进程，避免残留
                     PowerPointVectorExporter.KillNewPowerPointProcesses(existingPids);
                     return VectorPdfResult.Fail(
-                        "矢量 PDF 导出超时（超过 60 秒）。" +
+                        "矢量 PDF 导出超时（超过 120 秒）。" +
                         "首次启动 PowerPoint 可能较慢，请稍后重试；若反复超时，请确认 PowerPoint 可正常启动。");
                 }
 

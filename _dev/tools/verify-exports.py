@@ -138,6 +138,61 @@ def load_json_file(path):
         return json.load(fh)
 
 
+def measure_ink_margins(path, dpi, tolerance=14, background=(255, 255, 255)):
+    """扫描渲染图非背景像素，返回四边留白（mm）与墨迹像素 bbox。
+
+    用于验证 PDF 白边裁剪是否彻底：页面四边的实际非白墨迹余量应接近 0。
+    tolerance 吸收 JPEG 压缩/抗锯齿造成的近白像素误差。
+    """
+    if Image is None:
+        return {"marginsMm": None, "error": "Pillow 不可用"}
+    with Image.open(path) as img:
+        rgb = img.convert("RGB")
+        width, height = rgb.size
+        pixels = list(rgb.getdata())
+    tol = max(0, int(tolerance))
+    bg = background
+    min_x, min_y = width, height
+    max_x, max_y = -1, -1
+    for index, pixel in enumerate(pixels):
+        if (abs(pixel[0] - bg[0]) > tol or abs(pixel[1] - bg[1]) > tol or
+                abs(pixel[2] - bg[2]) > tol):
+            x = index % width
+            y = index // width
+            if x < min_x:
+                min_x = x
+            if y < min_y:
+                min_y = y
+            if x > max_x:
+                max_x = x
+            if y > max_y:
+                max_y = y
+    if max_x < 0:
+        return {
+            "marginsMm": None,
+            "boxPx": None,
+            "imagePx": [width, height],
+            "error": "渲染图无非背景墨迹（可能整页空白）",
+        }
+    px_per_mm = max(1.0, float(dpi)) / MM_PER_INCH
+
+    def mm(value):
+        return round(value / px_per_mm, 3)
+
+    return {
+        "marginsMm": {
+            "top": mm(min_y),
+            "right": mm(width - 1 - max_x),
+            "bottom": mm(height - 1 - max_y),
+            "left": mm(min_x),
+        },
+        "boxPx": {"x": min_x, "y": min_y, "w": max_x - min_x + 1, "h": max_y - min_y + 1},
+        "imagePx": [width, height],
+        "dpi": dpi,
+        "tolerance": tol,
+    }
+
+
 def point_region_average(img, x, y, radius=1):
     """取 (x,y) 附近 (2r+1)^2 区域的平均 RGBA（越界自动 clamp）。"""
     rgba = img.convert("RGBA")
@@ -634,6 +689,34 @@ def verify_pdf(args):
         except Exception as exc:  # noqa: BLE001
             add_check(checks, "PIL 可打开渲染图", False, "%s: %s" % (type(exc).__name__, exc))
 
+    # 实际墨迹四边留白（PDF 白边裁剪验证）
+    if args.max_ink_margin_mm is not None:
+        if not render["path"]:
+            add_check(checks, "墨迹留白可测（需渲染图）", False, render.get("stderr"))
+        elif Image is None:
+            add_check(checks, "墨迹留白可测（Pillow 不可用）", False, None)
+        else:
+            try:
+                ink = measure_ink_margins(render["path"], args.render_dpi, args.ink_tolerance)
+                details["inkMarginsMm"] = ink["marginsMm"]
+                details["inkBoxPx"] = ink["boxPx"]
+                details["inkImagePx"] = ink["imagePx"]
+                details["inkTolerance"] = args.ink_tolerance
+                if not ink.get("marginsMm"):
+                    add_check(checks, "墨迹 bbox 可测（非空白页面）", False, ink.get("error"))
+                else:
+                    for side, label in (
+                        ("top", "上"), ("right", "右"), ("bottom", "下"), ("left", "左"),
+                    ):
+                        margin = ink["marginsMm"][side]
+                        add_check(
+                            checks,
+                            "墨迹%s边留白 %.2fmm ≤ %.2fmm" % (label, margin, args.max_ink_margin_mm),
+                            margin <= args.max_ink_margin_mm + 1e-6,
+                            {"marginMm": margin, "limitMm": args.max_ink_margin_mm})
+            except Exception as exc:  # noqa: BLE001
+                add_check(checks, "墨迹留白计算", False, "%s: %s" % (type(exc).__name__, exc))
+
     count_check = render_all_pages_count(args.file)
     details["renderPageCount"] = count_check["pages"]
     if args.expect_pages is not None and page_count is None:
@@ -778,6 +861,8 @@ def main(argv):
     parser.add_argument("--render-dir")
     parser.add_argument("--render-prefix")
     parser.add_argument("--render-dpi", type=int, default=72)
+    parser.add_argument("--max-ink-margin-mm", type=float)
+    parser.add_argument("--ink-tolerance", type=int, default=14)
     # zip
     parser.add_argument("--expect-entries", type=int)
     parser.add_argument("--expect-ext")

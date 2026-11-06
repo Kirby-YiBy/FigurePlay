@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -9,11 +10,11 @@ namespace FigurePlay.Desktop.Bridge
     ///   JS→Host : {"type":"read-clipboard-image","requestId":"&lt;id&gt;"}
     ///   Host→JS : {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":true,"dataUrl":"data:image/png;base64,...","width":W,"height":H,"sourceFormat":"EMF|Metafile|Bitmap|DIB"}
     ///             失败时 {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":false,"error":"中文原因"}
-    ///   启动后 Host 可发 {"type":"host-ready","version":"1.3.0"}
+    ///   启动后 Host 可发 {"type":"host-ready","version":"1.3.1"}
     /// </summary>
     internal static class BridgeProtocol
     {
-        public const string HostVersion = "1.3.0";
+        public const string HostVersion = "1.3.1";
 
         public const string TypeReadClipboardImage = "read-clipboard-image";
         public const string TypeClipboardImage = "clipboard-image";
@@ -158,7 +159,8 @@ namespace FigurePlay.Desktop.Bridge
             int bytes,
             string engine,
             int vectorPanels,
-            int rasterPanels)
+            int rasterPanels,
+            List<string> diagnostics = null)
         {
             JObject payload = new JObject
             {
@@ -171,6 +173,11 @@ namespace FigurePlay.Desktop.Bridge
                 ["vectorPanels"] = vectorPanels,
                 ["rasterPanels"] = rasterPanels,
             };
+            if (diagnostics != null && diagnostics.Count > 0)
+            {
+                payload["diagnostics"] = new JArray(diagnostics);
+            }
+
             return payload.ToString(Formatting.None);
         }
 

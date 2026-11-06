@@ -230,6 +230,28 @@ def main():
     check("多页 PDF 渲染页数=2", pdf_details.get("renderPageCount") == 2,
           pdf_details.get("renderPageCount"))
 
+    # ---- 10b) PDF 实际墨迹四边留白（ink trim 验证能力）----
+    code, report = run_verify([
+        "--kind", "pdf", "--file", multi_pdf,
+        "--render-dir", FIXTURES, "--render-prefix", "selftest-ink", "--render-dpi", "96",
+        "--max-ink-margin-mm", "100",
+    ])
+    ink_details = report.get("details", {})
+    ink_margins = ink_details.get("inkMarginsMm") or {}
+    check("PDF 墨迹四边留白可测（inkMarginsMm 结构完整）",
+          code == 0 and all(side in ink_margins for side in ("top", "right", "bottom", "left")),
+          {"code": code, "margins": ink_margins, "boxPx": ink_details.get("inkBoxPx")})
+    check("PDF 墨迹留白数值为合理非负 mm",
+          all(0 <= ink_margins.get(side, -1) <= 100 for side in ("top", "right", "bottom", "left")),
+          ink_margins)
+    code, report = run_verify([
+        "--kind", "pdf", "--file", multi_pdf,
+        "--render-dir", FIXTURES, "--render-prefix", "selftest-ink-strict", "--render-dpi", "96",
+        "--max-ink-margin-mm", "0.1",
+    ])
+    check("PDF 墨迹留白阈值过严 -> 失败", code == 1,
+          report.get("failedChecks"))
+
     # ---- 11) ZIP 多页导出校验 ----
     zip_path = os.path.join(FIXTURES, "fixture-pages.zip")
     with zipfile.ZipFile(zip_path, "w") as archive:

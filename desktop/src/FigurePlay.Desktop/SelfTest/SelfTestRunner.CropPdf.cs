@@ -28,6 +28,12 @@ namespace FigurePlay.Desktop.SelfTest
             const double cropW = 150;
             const double cropH = 100;
 
+            // 用“实心填满画布”的真实 EMF 做 crop 测试：PowerPoint 端 ink probe 无额外白边，
+            // 页面应保持 crop 尺寸；真实 MATLAB EMF 的内部白边会被宿主二次校正掉，不适合断言页尺寸。
+            byte[] solidEmf = TestFigureFactory.CreateSolidEmfBytes();
+            result["emfSource"] = "C# Metafile 录制（实心填满画布）";
+            result["emfBytes"] = solidEmf.Length;
+
             JObject cropSpec = (JObject)baseSpec.DeepClone();
             cropSpec["crop"] = new JObject
             {
@@ -36,6 +42,23 @@ namespace FigurePlay.Desktop.SelfTest
                 ["wMm"] = cropW,
                 ["hMm"] = cropH,
             };
+
+            // 面板与 crop 完全重合 + stretch，保证 ink 覆盖页面（不会被二次校正缩小）
+            JArray panels = cropSpec["panels"] as JArray;
+            if (panels != null && panels.Count > 0)
+            {
+                JObject panel = (JObject)panels[0];
+                panel["xMm"] = cropX;
+                panel["yMm"] = cropY;
+                panel["wMm"] = cropW;
+                panel["hMm"] = cropH;
+                panel["fit"] = "stretch";
+                panel["image"] = new JObject
+                {
+                    ["kind"] = "emf",
+                    ["base64"] = Convert.ToBase64String(solidEmf),
+                };
+            }
 
             string requestId = "selftest-vector-crop-" + DateTime.Now.Ticks;
             result["requestId"] = requestId;
@@ -72,6 +95,8 @@ namespace FigurePlay.Desktop.SelfTest
             double expectedHeightPt = cropH / 25.4 * 72.0;
             checks["expectedPageWidthPt"] = Math.Round(expectedWidthPt, 2);
             checks["expectedPageHeightPt"] = Math.Round(expectedHeightPt, 2);
+            // 宿主二次墨迹校正可能把页面轻微缩小；实心 EMF 应几乎不缩，留 3mm 容差
+            double tolerancePt = 3.0 / 25.4 * 72.0 + 0.5;
 
             string pdfinfoExe = FindPdfTool("pdfinfo");
             string pdfimagesExe = FindPdfTool("pdfimages");
@@ -91,8 +116,8 @@ namespace FigurePlay.Desktop.SelfTest
                     checks["pages"] = pages;
                     // ±0.5mm ≈ ±1.42pt，留 2pt 容差
                     pageSizeOk = pages == 1 &&
-                                 Math.Abs(widthPt - expectedWidthPt) <= 2.0 &&
-                                 Math.Abs(heightPt - expectedHeightPt) <= 2.0;
+                                 Math.Abs(widthPt - expectedWidthPt) <= tolerancePt &&
+                                 Math.Abs(heightPt - expectedHeightPt) <= tolerancePt;
                 }
             }
 
@@ -104,8 +129,8 @@ namespace FigurePlay.Desktop.SelfTest
                 {
                     checks["mediaBoxWidthPt"] = Math.Round(widthPt, 2);
                     checks["mediaBoxHeightPt"] = Math.Round(heightPt, 2);
-                    pageSizeOk = Math.Abs(widthPt - expectedWidthPt) <= 2.0 &&
-                                 Math.Abs(heightPt - expectedHeightPt) <= 2.0;
+                    pageSizeOk = Math.Abs(widthPt - expectedWidthPt) <= tolerancePt &&
+                                 Math.Abs(heightPt - expectedHeightPt) <= tolerancePt;
                 }
             }
 
