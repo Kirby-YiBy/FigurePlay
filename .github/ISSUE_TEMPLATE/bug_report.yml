@@ -1,0 +1,57 @@
+name: Bug report
+description: 报告 FigurePlay 的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量附上版本、系统、复现步骤和截图。
+        请勿粘贴未公开论文图片、token 或完整工程文件。
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 使用说明/标题栏显示的版本，或 exe 文件版本
+      placeholder: v1.5.2
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: 版本类型
+      options:
+        - 网页版（Chrome/Edge）
+        - 桌面单文件版
+        - 桌面多文件版
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 ...
+        2. 选择 ...
+        3. 看到 ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 诊断日志/截图（可选）
+      description: 使用说明 → 诊断日志 → 导出日志；请脱敏
+    validations:
+      required: false

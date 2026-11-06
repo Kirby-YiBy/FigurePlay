@@ -1,7 +1,13 @@
 # FigurePlay · 论文子图排版工具
 
+[![CI](https://github.com/Kirby-YiBy/FigurePlay/actions/workflows/ci.yml/badge.svg)](https://github.com/Kirby-YiBy/FigurePlay/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Kirby-YiBy/FigurePlay?display_name=tag)](https://github.com/Kirby-YiBy/FigurePlay/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 > 在浏览器或 Windows 桌面窗口中完成论文子图的行列排列、合并单元格、多页图集、子图分组、统一编号与高清导出的本地工具。
 > 无需安装、无需联网；桌面版额外支持从 MATLAB 图窗直接粘贴（含 EMF 图元）与直接读取 `.fig` 文件。
+>
+> 仓库：<https://github.com/Kirby-YiBy/FigurePlay> · 下载：<https://github.com/Kirby-YiBy/FigurePlay/releases/latest>
 
 ![界面预览](docs/界面预览.png)
 
@@ -15,7 +21,7 @@
 
 **方式二：桌面版（推荐 MATLAB 图窗粘贴 / .fig）**
 
-双击 `启动FigurePlay桌面版.bat`，或直接运行 **`desktop\dist-single\FigurePlay.exe`**（单文件版，目录里只有这一个 exe，约 800 KB）。
+从 [GitHub Releases](https://github.com/Kirby-YiBy/FigurePlay/releases/latest) 下载 `FigurePlay-*-single-win-x64.zip`，解压后运行单文件 `FigurePlay.exe`（约 900 KB）；或本地执行 `desktop/build.ps1` 构建。
 
 - 桌面版使用 Windows 自带的 WebView2 内核，以独立窗口打开，不显示浏览器地址栏；
 - 支持读取 Windows 系统剪贴板中的 **EMF 图元**（MATLAB「Copy Figure」默认格式），自动转为高清 PNG；
@@ -333,7 +339,7 @@ PDF 是位图封装，编号已光栅化；需要可编辑文字请导出 SVG。
 
 ## 版本管理
 
-本项目已在 `E:\FigurePlay` 初始化 Git 仓库，源码、文档、测试脚本和构建脚本均纳入版本追踪；`dist/`、`selftest/`、打包 zip、`_dev/artifacts` 与测试截图等可再生成的大文件不进入 Git（见 `.gitignore`）。
+源码、文档、测试脚本和构建脚本均纳入 Git；`dist/`、`selftest/`、打包 zip、`_dev/artifacts` 与测试截图等可再生成的大文件不进入 Git（见 `.gitignore`）。远程仓库：<https://github.com/Kirby-YiBy/FigurePlay>。
 
 常用命令：
 
@@ -347,6 +353,15 @@ git commit -m "说明这次修改"
 ```
 
 当前基线提交带标签 `v1.5.2`，对应“完整工程文件 + 配置外部持久化/备份恢复 + 期刊配置库 + 图片预检 + 全页矢量 PDF + 安装器/更新/关闭提示 + 外观主题 + 编号/裁剪/页距/负间距”的发布版本。
+
+## 许可证
+
+本项目使用 [MIT License](LICENSE)。第三方组件许可见 `vendor/` 与 `desktop/dist/`；发布 exe 为未签名构建，请核对 Release 页面 SHA256。
+
+- 隐私说明：[PRIVACY.md](PRIVACY.md)
+- 安全/更新说明：[SECURITY.md](SECURITY.md)
+- 参与开发：[CONTRIBUTING.md](CONTRIBUTING.md)
+- 发布流程：[RELEASE.md](RELEASE.md)
 
 ## 第三方组件
 

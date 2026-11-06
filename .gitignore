@@ -33,6 +33,14 @@ desktop/src/**/obj/
 desktop/*.zip
 desktop/payload.zip
 
+# ---- 用户数据 / 本机配置（不要提交） ----
+*.figureplay-project
+*.figureplay.json
+update.json
+!update.example.json
+*.log
+desktop/installer/install-info.json
+
 # ---- 本机运行时缓存 ----
 *.suo
 *.user
