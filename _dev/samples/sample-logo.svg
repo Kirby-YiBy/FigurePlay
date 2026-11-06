@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240" viewBox="0 0 400 240">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6fd0" />
+      <stop offset="1" stop-color="#7b4bc4" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="400" height="240" rx="18" fill="url(#g1)" />
+  <circle cx="100" cy="120" r="58" fill="#ffffff" opacity="0.92" />
+  <rect x="185" y="62" width="160" height="26" rx="13" fill="#ffd666" />
+  <rect x="185" y="108" width="122" height="20" rx="10" fill="#ffffff" opacity="0.8" />
+  <rect x="185" y="146" width="140" height="20" rx="10" fill="#ffffff" opacity="0.5" />
+  <text x="200" y="205" font-family="Arial, sans-serif" font-size="22" fill="#ffffff">FigurePlay SVG</text>
+</svg>

@@ -1,0 +1,15 @@
+{
+  "name": "figureplay-dev",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "FigurePlay 无头浏览器 E2E 测试环境（仅 _dev，不属于应用产物）",
+  "scripts": {
+    "smoke": "node smoke/smoke.mjs",
+    "e2e": "node e2e.mjs",
+    "samples": "node tools/gen-samples.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.56.0"
+  }
+}

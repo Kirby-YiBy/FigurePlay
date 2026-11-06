@@ -1,0 +1,39 @@
+# ---- 操作系统 / 编辑器临时文件 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+*.swp
+*.tmp
+
+# ---- Node / 测试依赖 ----
+node_modules/
+_dev/node_modules/
+npm-debug.log*
+pnpm-debug.log*
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- 测试产物（体积大，可在本地重新生成） ----
+_dev/artifacts/
+_dev/screens*/
+_dev/shots*/
+_dev/downloads/
+_dev/.tmp/
+_dev/tmp/
+
+# ---- 桌面版构建产物（由 desktop/build.ps1 重新生成） ----
+desktop/dist/
+desktop/dist-single/
+desktop/selftest/
+desktop/selftest-single/
+desktop/_zipcheck-*/
+desktop/src/**/bin/
+desktop/src/**/obj/
+desktop/*.zip
+desktop/payload.zip
+
+# ---- 本机运行时缓存 ----
+*.suo
+*.user
+.vs/
