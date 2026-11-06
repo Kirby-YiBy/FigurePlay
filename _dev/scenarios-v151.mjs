@@ -247,11 +247,12 @@ const diagnosticsScenario = {
     const { page } = ctx;
     await app.openAppReady(page);
     if (!(await app.ensureV151(ctx, page))) return;
+    const appVersion = await page.evaluate(() => window.__FIGPLAY__.version);
     let diag = await app.getDiagnosticState(page);
     ctx.check('应用就绪写入诊断日志（info 级，含版本号）',
       diag.logCount >= 1 && diag.levels.info >= 1
-      && diag.logs.some((entry) => /应用就绪 v1\.5\.1/.test(entry.message || '')),
-      { count: diag.logCount, levels: diag.levels, first: diag.logs[0] });
+      && diag.logs.some((entry) => String(entry.message || '').indexOf('应用就绪 v' + appVersion) >= 0),
+      { count: diag.logCount, levels: diag.levels, first: diag.logs[0], appVersion });
 
     await page.evaluate(() => window.FP.toast('E2E 日志 toast 测试', 'info'));
     await page.evaluate(() => window.FP.logEvent('error', 'E2E 错误级日志', { code: 'E2E-ERR' }));
@@ -300,9 +301,9 @@ const diagnosticsScenario = {
     const logText = fs.readFileSync(logFile.path, 'utf8');
     ctx.check('浏览器模式导出日志：下载 .log，含版本/生成时间/日志行',
       /\.log$/i.test(logFile.suggestedFilename || '') && /FigurePlay 诊断日志/.test(logText)
-      && /版本：1\.5\.1/.test(logText) && /生成时间：/.test(logText)
+      && logText.indexOf('版本：' + appVersion) >= 0 && /生成时间：/.test(logText)
       && /INFO/.test(logText),
-      { filename: logFile.suggestedFilename, size: logFile.size });
+      { filename: logFile.suggestedFilename, size: logFile.size, appVersion });
     ctx.check('浏览器导出日志 toast 提示已下载',
       /诊断日志已下载/.test((await app.getToast(page)).text || ''),
       (await app.getToast(page)).text);
@@ -340,7 +341,7 @@ const diagnosticsScenario = {
       const text = Buffer.from(call.base64 || '', 'base64').toString('utf8');
       ctx.check('桌面模式导出日志走 FP.desktop.saveFile（filter=.log，内容含宿主日志/版本）',
         !!call && call.filterExtensions.join(',') === '.log'
-        && /FigurePlay 诊断日志/.test(text) && /版本：1\.5\.1/.test(text)
+        && /FigurePlay 诊断日志/.test(text) && text.indexOf('版本：' + appVersion) >= 0
         && /宿主日志导出测试/.test(text),
         { call: call && { name: call.suggestedName, filter: call.filterExtensions }, bytes: call && call.base64Length });
       ctx.check('桌面导出日志 toast 包含原生保存路径',

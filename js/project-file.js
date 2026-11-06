@@ -60,10 +60,15 @@
             filterExtensions: ['.figureplay-project'],
             base64: b64
           });
-          if (res && res.ok) {
-            if (res.canceled) return false;
-            saved = true;
-            savedPath = res.path || '';
+          if (res) {
+            if (res.canceled) { setStatus('已取消保存工程', false); return false; }
+            if (res.ok) {
+              saved = true;
+              savedPath = res.path || '';
+            } else {
+              setStatus('保存工程失败：' + (res.error || '原生保存失败'), true);
+              return false;
+            }
           }
         } catch (e) {
           // 原生保存不可用时继续走浏览器 picker/下载

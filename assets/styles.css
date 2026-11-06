@@ -39,9 +39,8 @@
 
 /* 主题色只切换 CSS 变量，不触发应用重新渲染/画布重绘 */
 html[data-accent="indigo"] { --accent: #4f46e5; --accent-strong: #4338ca; }
-html[data-accent="teal"] { --accent: #0d9488; --accent-strong: #0f766e; }
 html[data-accent="emerald"] { --accent: #059669; --accent-strong: #047857; }
-html[data-accent="violet"] { --accent: #7c3aed; --accent-strong: #6d28d9; }
+html[data-accent="pink"] { --accent: #db2777; --accent-strong: #be185d; }
 html[data-accent="rose"] { --accent: #e11d48; --accent-strong: #be123c; }
 html[data-accent="amber"] { --accent: #d97706; --accent-strong: #b45309; }
 * { box-sizing: border-box; }
@@ -510,8 +509,12 @@ body[data-format="jpg"] #jpg-quality-row, body[data-format="pdf"] #jpg-quality-r
   width: min(680px, calc(100vw - 40px)); max-height: calc(100vh - 80px);
   border: 1px solid var(--border); border-radius: 16px;
   padding: 0; box-shadow: var(--shadow-lg); color: var(--text);
+  background: var(--panel);
 }
-.help-dialog::backdrop { background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px); }
+/* 背景不再虚化，避免“恢复备份”等确认/提示叠在弹窗后时看不清。 */
+.help-dialog::backdrop { background: rgba(15, 23, 42, .26); backdrop-filter: none; }
+.dialog-drag-handle { cursor: move; user-select: none; touch-action: none; }
+.dialog-drag-handle h2 { pointer-events: none; }
 .help-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 18px; border-bottom: 1px solid var(--border);

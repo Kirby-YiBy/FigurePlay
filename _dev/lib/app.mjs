@@ -2332,10 +2332,10 @@ export async function ensureV133(ctx, page, label = 'v1.3.3 契约') {
  * ========================================================================== */
 
 export const V134_MODES = ['light', 'dark', 'system'];
-export const V134_ACCENTS = ['blue', 'indigo', 'teal', 'emerald', 'violet', 'rose', 'amber'];
+export const V134_ACCENTS = ['blue', 'indigo', 'emerald', 'pink', 'rose', 'amber'];
 export const V134_ACCENT_HEX = {
-  blue: '#2563eb', indigo: '#4f46e5', teal: '#0d9488', emerald: '#059669',
-  violet: '#7c3aed', rose: '#e11d48', amber: '#d97706',
+  blue: '#2563eb', indigo: '#4f46e5', emerald: '#059669', pink: '#db2777',
+  rose: '#e11d48', amber: '#d97706',
 };
 export const APPEARANCE_MODE_KEY = 'figureplay.themeMode';
 export const APPEARANCE_ACCENT_KEY = 'figureplay.accent';
@@ -2607,7 +2607,7 @@ export async function ensureV134(ctx, page, label = 'v1.3.4 契约') {
   ctx.note('v1.3.4 界面外观契约探测（信息，非问题）', JSON.stringify(probe));
   return probe.hasSetAppearance && probe.hasGetAppearance && probe.hasFpAppearance
     && probe.themeCssLoaded && probe.buttonExists && probe.popoverExists
-    && probe.modes.length === 3 && probe.accents.length === 7;
+    && probe.modes.length === 3 && probe.accents.length === 6;
 }
 
 /* ==========================================================================
@@ -3481,6 +3481,88 @@ export async function waitNativeBridgeResult(page, callId, options = {}) {
   }, callId, { timeout, label });
   return getNativeBridgeResult(page, callId);
 }
+
+/* ==========================================================================
+ * v1.5.2 新增：取消保存 / 弹窗拖动与背景 / 主题色精简
+ * ========================================================================== */
+
+/** 跟踪 FP.downloadBlob 与 showSaveFilePicker 调用（用于取消保存时验证不落盘） */
+export async function trackSaveSideEffects(page) {
+  return page.evaluate(() => {
+    window.__saveSideEffects = { downloads: [], dialogues: 0 };
+    const origDownload = window.FP.downloadBlob;
+    if (!window.__origDownloadBlob) window.__origDownloadBlob = origDownload;
+    window.FP.downloadBlob = function (blob, name) {
+      window.__saveSideEffects.downloads.push(String(name || ''));
+    };
+    if (typeof window.showSaveFilePicker === 'function' && !window.__origShowSaveFilePicker) {
+      window.__origShowSaveFilePicker = window.showSaveFilePicker;
+      window.showSaveFilePicker = async function (...args) {
+        window.__saveSideEffects.dialogues += 1;
+        return window.__origShowSaveFilePicker.apply(this, args);
+      };
+    }
+    return true;
+  });
+}
+
+export async function getSaveSideEffects(page) {
+  return page.evaluate(() => (window.__saveSideEffects
+    ? JSON.parse(JSON.stringify(window.__saveSideEffects)) : null));
+}
+
+export async function resetSaveSideEffects(page) {
+  return page.evaluate(() => {
+    if (window.__saveSideEffects) window.__saveSideEffects = { downloads: [], dialogues: 0 };
+  });
+}
+
+/** 读取 dialog 几何/背景/::backdrop 样式（用于拖动/不虚化/深色断言） */
+export async function getDialogUiState(page, selector) {
+  return page.evaluate((sel) => {
+    const dialog = document.querySelector(sel);
+    if (!dialog) return null;
+    const rect = dialog.getBoundingClientRect();
+    const head = dialog.querySelector('.help-head');
+    const headRect = head ? head.getBoundingClientRect() : null;
+    const style = window.getComputedStyle(dialog);
+    let backdrop = null;
+    try {
+      const bd = window.getComputedStyle(dialog, '::backdrop');
+      backdrop = {
+        background: bd.backgroundColor,
+        backdropFilter: bd.backdropFilter || bd.webkitBackdropFilter || 'none',
+      };
+    } catch (err) { backdrop = null; }
+    return {
+      open: !!dialog.open,
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
+      headRect: headRect ? { left: headRect.left, top: headRect.top, width: headRect.width, height: headRect.height } : null,
+      headClass: head ? head.className : null,
+      headTitle: head ? head.title : null,
+      styleLeft: dialog.style.left, styleTop: dialog.style.top,
+      background: style.backgroundColor,
+      color: style.color,
+      backdrop,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    };
+  }, selector);
+}
+
+/** 拖动 dialog 的 .help-head（Playwright 真实鼠标事件） */
+export async function dragDialogHead(page, selector, dx, dy) {
+  const initial = await getDialogUiState(page, selector);
+  if (!initial || !initial.headRect) throw new Error(`dialog/head 不可用: ${selector}`);
+  const startX = initial.headRect.left + initial.headRect.width / 2;
+  const startY = initial.headRect.top + initial.headRect.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + dx, startY + dy, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(160);
+  return { before: initial, after: await getDialogUiState(page, selector) };
+}
+
 
 
 

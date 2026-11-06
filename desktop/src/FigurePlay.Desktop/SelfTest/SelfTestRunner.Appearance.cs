@@ -12,7 +12,7 @@ namespace FigurePlay.Desktop.SelfTest
     /// <summary>
     /// v1.3.4 外观主题 WebView2 冒烟：
     ///   1) setAppearance('light','blue') → 浅色基准 + PNG 导出基准；
-    ///   2) setAppearance('dark','violet') → html[data-theme=dark]/data-accent=violet、body 深色、
+    ///   2) setAppearance('dark','blue') → html[data-theme=dark]/data-accent=violet、body 深色、
     ///      #figure-shell 仍为白色；PNG 导出与浅色逐字节一致（主题不影响导出）；
     ///   3) 恢复 light/blue，属性/背景/导出与基准一致；console error 不增加。
     /// </summary>
@@ -66,7 +66,7 @@ namespace FigurePlay.Desktop.SelfTest
                     "   out.light = collect();" +
                     "   FP.exportBase64('png', { dpi: 200 }).then(function(light) {" +
                     "     out.lightPngLength = String(light.base64 || '').length;" +
-                    "     const setReturn = FP.setAppearance('dark', 'violet');" +
+                    "     const setReturn = FP.setAppearance('dark', 'blue');" +
                     "     out.setReturn = setReturn;" +
                     "     setTimeout(function(){ try {" +
                     "       out.dark = collect();" +
@@ -137,7 +137,7 @@ namespace FigurePlay.Desktop.SelfTest
                 result["checks"] = checks;
 
                 JObject lightCheck = BuildAppearanceCheck(light, "light", "blue", true, "浅色基准");
-                JObject darkCheck = BuildAppearanceCheck(dark, "dark", "violet", false, "深色+violet");
+                JObject darkCheck = BuildAppearanceCheck(dark, "dark", "blue", false, "深色+violet");
                 JObject restoredCheck = BuildAppearanceCheck(restored, "light", "blue", true, "恢复浅色");
                 checks["light"] = lightCheck;
                 checks["dark"] = darkCheck;

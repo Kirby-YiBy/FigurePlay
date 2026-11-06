@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.5.1-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.5.1-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.5.2-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.5.2-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -226,6 +226,15 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
     if ($report.vectorPdf -and $report.vectorPdf.labelCenter) {
         $lbl = $report.vectorPdf.labelCenter
         Write-Info ("编号中心      : ok={0} (a)={1}mm/err={2}mm (b)={3}mm/err={4}mm 容差={5}mm" -f $lbl.ok, $lbl.checks.centerAMm, $lbl.checks.centerAErrorMm, $lbl.checks.centerBMm, $lbl.checks.centerBErrorMm, $lbl.checks.toleranceMm)
+    }
+    if ($report.saveCancelE2E) {
+        $sc = $report.saveCancelE2E
+        if ($sc.ok) {
+            Write-Info ("保存取消真实桥: ok=True 工程取消不回退=True/配置={0}/日志=True 成功路径=工程{1}/配置{2}/日志{3}" -f $sc.checks.configCancelOk, $sc.checks.projectFile, $sc.checks.configFile, $sc.checks.logFile)
+        }
+        else {
+            Write-Info ("保存取消真实桥: ok=False " + $sc.error)
+        }
     }
     if ($report.updateBridgeE2E) {
         $ue = $report.updateBridgeE2E

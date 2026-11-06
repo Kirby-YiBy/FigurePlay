@@ -42,11 +42,12 @@ $py='C:\Users\DragonDance\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pyt
 #    v1.4.1 → +Y 矢量 PDF label spec 预览 bbox（textLeftMm/textTopMm/textWmm/textHmm）；
 #    v1.4.2 → +Z 配置模板宿主外部文件持久化（desktop load/saveConfigProfiles、迁移、路径提示）；
 #    v1.5.0 → +AA–AF 工程文件/配置备份恢复/期刊库/图片预检/更新 UI/全页矢量；
-#    v1.5.1 → +AG–AJ 页面自动编号/诊断日志/原生保存路径/真实桥回包
+#    v1.5.1 → +AG–AJ 页面自动编号/诊断日志/原生保存路径/真实桥回包；
+#    v1.5.2 → +AK–AM 取消保存/弹窗拖动与背景/主题色精简（6 色+迁移）
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --list
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=v151 --only=AG   # 单场景（A..AI）
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v151 # v1.5.1 正式：report-v1.5.1.md / screens-v1.5.1 / artifacts/e2e-v151/<run>
-& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v150 # v1.5.0 历史产物：report-v1.5.0.md / screens-v1.5.0 / artifacts/e2e-v150
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=v152 --only=AK   # 单场景（A..AM）
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v152 # v1.5.2 正式：report-v1.5.2.md / screens-v1.5.2 / artifacts/e2e-v152/<run>
+& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v151 # v1.5.1 历史产物：report-v1.5.1.md / screens-v1.5.1 / artifacts/e2e-v151
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v140 # v1.4.0 历史产物：report-v1.4.0.md / screens-v1.4.0 / artifacts/e2e-v140
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v134 # v1.3.4 历史产物：report-v1.3.4.md / screens-v1.3.4 / artifacts/e2e-v134
 & $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v133 # v1.3.3 历史产物：report-v1.3.3.md / screens-v1.3.3 / artifacts/e2e-v133
@@ -69,7 +70,7 @@ _dev/
   lib/app.mjs                  # 应用契约 helper：__FIGPLAY__ API、预览 DOM、编号期望、自动保存、拖放；
                                #   v1.1：合并/模板/多选/批量编号/粘贴弹窗/桌面桥；v1.2：多页/撤销重做/分组/多页导出/.fig；
                                #   v1.3：网格上限/保存位置 fake picker/autoPad/PDF 裁剪/数字输入/EMF 矢量 PDF；v1.3.1：getInkCropBox；
-                               #   v1.3.2：编号防裁安全边距/负间距；v1.3.3：交互 overlay 顶层描边；v1.3.4：界面外观；v1.4.0：配置模板；v1.4.1：label bbox；v1.4.2：配置宿主持久化；v1.5.0：工程/预检/期刊/更新/全页矢量；v1.5.1：页面编号/日志/saveFile
+                               #   v1.3.2：编号防裁安全边距/负间距；v1.3.3：交互 overlay 顶层描边；v1.3.4：界面外观；v1.4.0：配置模板；v1.4.1：label bbox；v1.4.2：配置宿主持久化；v1.5.0：工程/预检/期刊/更新/全页矢量；v1.5.1：页面编号/日志/saveFile；v1.5.2：取消/拖动/6 主题色
   lib/verify.mjs               # 调用 Python 校验器（PNG/JPG/SVG/PDF/ZIP；SVG clip/像素探针/pdfinfo 页数/PDF 墨迹四边余量）
   scenarios.mjs                # v1.0 场景 A–F
   scenarios-v11.mjs            # v1.1 场景 G–L
@@ -77,6 +78,7 @@ _dev/
   scenarios-v13.mjs            # v1.3/1.3.1/1.3.2 场景 P–Z（S/U 按 ink 安全边距，V 负间距）
   scenarios-v15.mjs            # v1.5.0 场景 AA–AF（工程文件/配置备份/期刊库/预检/更新/全页矢量）
   scenarios-v151.mjs           # v1.5.1 场景 AG–AJ（页面自动编号/原生保存/诊断日志/真实桥回包）
+  scenarios-v152.mjs           # v1.5.2 场景 AK–AM（取消保存/弹窗拖动背景/主题色精简）
   contract-notes-v1.1.md       # v1.1 契约与假设记录
   contract-notes-v1.2.md       # v1.2 契约、冻结哈希、自动化假设记录
   contract-notes-v1.3.md       # v1.3 契约、冻结哈希、自动化假设记录
@@ -89,7 +91,8 @@ _dev/
   contract-notes-v1.4.2.md     # v1.4.2 配置宿主外部文件持久化契约、冻结哈希与实测记录
   contract-notes-v1.5.0.md     # v1.5.0 工程文件/配置备份/期刊库/预检/更新/全页矢量契约与实测记录
   contract-notes-v1.5.1.md     # v1.5.1 页面自动编号/诊断日志/原生保存路径/真实桥回包契约与实测记录
-  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|v15|v151|all，--only，--final/--final-v11…v150/v151
+  contract-notes-v1.5.2.md     # v1.5.2 取消保存/弹窗拖动背景/主题色精简契约与实测记录
+  e2e.mjs                      # E2E 入口：--suite=v10|v11|v12|v13|v15|v151|v152|all，--only，--final/--final-v11…v150/v151/v152
   report.md / shots/           # v1.0 正式报告与截图
   report-v1.1.md / shots-v1.1/ # v1.1 正式报告与截图
   report-v1.2.md / screens-v1.2/  # v1.2 正式报告与 17 张关键截图（--final-v12）
@@ -103,6 +106,7 @@ _dev/
   report-v1.4.2.md / screens-v1.4.2/  # v1.4.2 配置宿主持久化正式报告与 29 张关键截图（--final-v142）
   report-v1.5.0.md / screens-v1.5.0/  # v1.5.0 六项新功能正式报告与 34 张关键截图（--final-v150）
   report-v1.5.1.md / screens-v1.5.1/  # v1.5.1 页面编号/日志/原生保存/真实桥回包正式报告与 39 张关键截图（--final-v151）
+  report-v1.5.2.md / screens-v1.5.2/  # v1.5.2 取消保存/弹窗拖动/主题色正式报告与 42 张关键截图（--final-v152）
   smoke/upload-test.html       # file:// 能力验证页（window.smoke.*）
   smoke/run-smoke.mjs          # smoke 运行器 → artifacts/smoke-report.json
   tools/gen-samples.py         # 示例图片生成（samples/manifest.json 含尺寸/主色/缩略图/sha256）
@@ -128,6 +132,7 @@ _dev/
     e2e-v142/<run>/            # v1.4.2 最终 run：results.json + exports/（配置宿主持久化证据，空间受控）
     e2e-v150/<run>/            # v1.5.0 最终 run：results.json + exports/（工程文件/全页矢量等证据，空间受控）
     e2e-v151/<run>/            # v1.5.1 最终 run：results.json + exports/（页面编号/日志/原生保存证据，空间受控）
+    e2e-v152/<run>/            # v1.5.2 最终 run：results.json + exports/（取消/拖动/主题色证据，空间受控）
 ```
 
 ## E2E 场景 A–F（应用 FigurePlay v1.0.0 已通过）
@@ -330,6 +335,21 @@ v1.5.0 的 1003 断言保留 + AG–AJ 新增 62 条。产物整包 23.43MB（<2
 | AJ 真实桥回包 | window.chrome.webview mock、不 stub 任何 FP.desktop 方法：saveFile→file-saved 480ms resolve（requestId 匹配/错误 id 忽略/path 正确）、工程保存 UI path；`__UPDATES__.check()`→update-info 9ms resolve（1.5.2/1.5.1/notes、按钮启用）；`__UPDATES__.download()`→update-downloaded（状态含完成+下载路径、按钮恢复） |
 
 旧场景适配：O/U/AF 在桌面桥 mock 下导出前显式移除 `FP.desktop.saveFile`（恢复 download/fake-picker 断言）；AA 动态读取 appVersion；AE 更新 mock 改为在 init script 属性 setter 中打桩避免初始化时序竞态。
+
+## E2E v1.5.2 取消保存/弹窗拖动背景/主题色精简（应用 v1.5.2 已通过）
+
+命令：`& $node 'E:\FigurePlay\_dev\e2e.mjs' --suite=all --final-v152`（v1.0–v1.5.2 全量，正式产物
+`_dev/report-v1.5.2.md`、`_dev/screens-v1.5.2/`、`_dev/artifacts/e2e-v152/<run>/`）。
+
+最终状态（2026-11-06，run `2026-11-06_16-30-00-591`）：**39/39 场景 PASS，1105/1105 断言 PASS，0 失败项**；
+v1.5.1 的 1065 断言保留 + AK–AM 新增 40 条。产物整包 24.22MB（<25MB 预算），截图 42 张。
+应用源冻结哈希（19 个文件完整 sha256，含新增 `js/dialog-drag.js`）程序核对 ALL MATCH，见 [`contract-notes-v1.5.2.md`](contract-notes-v1.5.2.md)。
+
+| 场景 | v1.5.2 覆盖点 |
+| --- | --- |
+| AK 取消保存 | stub saveFile 返回 canceled：工程/配置/诊断日志取消均不 downloadBlob、不弹 picker、无成功提示、状态「已取消保存工程」；随后各成功保存一次（6 次 saveFile：工程/配置/日志×取消+成功） |
+| AL 弹窗拖动/背景 | 配置/使用说明 `.help-head` 拖动后坐标改变且视口内、关闭重开仍可视；dialog 背景=panel；`::backdrop` backdrop-filter=none（浅/深）；深色配置弹窗背景 rgb(22,32,51) 非白、文字对比度 ≥4.5 |
+| AM 主题色精简 | 仅 6 色 blue/indigo/emerald/pink/rose/amber（无 teal/violet）；pink=#db2777；旧 localStorage teal→emerald、violet→pink 自动迁移；非法 setAccent 被忽略 |
 
 ## smoke 已验证结论（Chrome 156 headless，file:// 无任何放宽启动参数）
 

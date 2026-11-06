@@ -222,6 +222,10 @@ namespace FigurePlay.Desktop.SelfTest
                 JObject vectorPdfMulti = await RunVectorPdfMultiChecksAsync();
                 _report["vectorPdfMulti"] = vectorPdfMulti;
 
+                // 6.9) v1.5.2 真实 WebView2 保存取消 E2E：工程/配置/日志取消不回退 picker/download，成功路径正常
+                JObject saveCancelE2E = await RunSaveCancelBridgeE2ETestAsync();
+                _report["saveCancelE2E"] = saveCancelE2E;
+
                 // 6.8) v1.5.1 真实 WebView2 更新 UI E2E：check-update→update-info / download-update→update-downloaded
                 JObject updateBridgeE2E = await RunUpdateBridgeE2ETestAsync();
                 _report["updateBridgeE2E"] = updateBridgeE2E;
@@ -322,6 +326,15 @@ namespace FigurePlay.Desktop.SelfTest
                 if (!screenshot.Value<bool>("ok"))
                 {
                     failures.Add("窗口截图失败：" + (screenshot.Value<string>("error") ?? "未知原因"));
+                }
+
+                bool saveCancelE2EOk = _report["saveCancelE2E"] is JObject &&
+                                       ((JObject)_report["saveCancelE2E"]).Value<bool>("ok");
+                if (!saveCancelE2EOk)
+                {
+                    JObject scE2E = _report["saveCancelE2E"] as JObject;
+                    failures.Add("保存取消真实桥 E2E 失败：" +
+                                 (scE2E == null ? "未生成报告" : (scE2E.Value<string>("error") ?? "未知原因")));
                 }
 
                 bool updateBridgeE2EOk = _report["updateBridgeE2E"] is JObject &&

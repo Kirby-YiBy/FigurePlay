@@ -42,7 +42,7 @@ namespace FigurePlay.Desktop.SelfTest
                 string payloadUrl = new Uri(payloadPath).AbsoluteUri;
                 JObject manifest = new JObject
                 {
-                    ["version"] = "1.5.2",
+                    ["version"] = "1.5.3",
                     ["url"] = payloadUrl,
                     ["sha256"] = sha256,
                     ["notes"] = "update-e2e-selftest",
@@ -110,7 +110,7 @@ namespace FigurePlay.Desktop.SelfTest
                 int downloadMs = state.Value<int?>("downloadMs") ?? -1;
                 bool checkOk = check != null && check.Value<bool>("ok") && check.Value<bool>("configured") &&
                                check.Value<bool>("hasUpdate") &&
-                               (check.Value<string>("latestVersion") == "1.5.2") &&
+                               (check.Value<string>("latestVersion") == "1.5.3") &&
                                checkMs >= 0 && checkMs < 5000;
                 string downloadPath = download == null ? string.Empty : (download.Value<string>("path") ?? string.Empty);
                 bool downloadOk = download != null && download.Value<bool>("ok") &&

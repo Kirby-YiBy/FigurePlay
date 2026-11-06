@@ -1571,9 +1571,9 @@ const appearanceScenario = {
       && state.modes[2].active === true && state.modes[2].ariaPressed === 'true'
       && state.modes[0].active === false && state.modes[1].active === false,
       state.modes);
-    ctx.check('弹层 7 个主题色 swatch，默认 blue active/aria-pressed',
-      state.accents.length === 7
-      && state.accents.map((item) => item.accent).join(',') === 'blue,indigo,teal,emerald,violet,rose,amber'
+    ctx.check('弹层 6 个主题色 swatch，默认 blue active/aria-pressed',
+      state.accents.length === 6
+      && state.accents.map((item) => item.accent).join(',') === 'blue,indigo,emerald,pink,rose,amber'
       && state.accents[0].active === true && state.accents[0].ariaPressed === 'true',
       state.accents);
 
@@ -1627,7 +1627,7 @@ const appearanceScenario = {
       null, { label: 'outside close' });
     ctx.check('点击弹层外部关闭', true);
 
-    // 5) 7 种主题色
+    // 5) 6 种主题色
     await app.openAppearanceMenu(page);
     const accentResults = [];
     for (const accent of app.V134_ACCENTS) {
@@ -1655,7 +1655,7 @@ const appearanceScenario = {
       && item.cssVar === app.V134_ACCENT_HEX[item.accent]
       && item.active === true && item.ariaPressed === 'true'
       && item.storage === item.accent);
-    ctx.check('7 种主题色逐个切换：data-accent/--accent/swatch active/aria/localStorage 均正确',
+    ctx.check('6 种主题色逐个切换：data-accent/--accent/swatch active/aria/localStorage 均正确',
       accentsOk, accentResults);
     ctx.check('主题色变化影响按钮主色（--accent 生效于 UI）',
       new Set(accentResults.map((item) => item.primaryBg)).size >= 5,
@@ -1663,12 +1663,12 @@ const appearanceScenario = {
 
     // 保留深色 + 紫罗兰，测试 reload 持久化
     await app.clickAppearanceMode(page, 'dark');
-    await app.clickAccent(page, 'violet');
+    await app.clickAccent(page, 'pink');
     state = await app.waitAppearanceState(page,
-      (value) => value.html.theme === 'dark' && value.html.accent === 'violet',
-      null, { label: 'dark violet persisted' });
+      (value) => value.html.theme === 'dark' && value.html.accent === 'pink',
+      null, { label: 'dark pink persisted' });
     ctx.check('设置深色+紫罗兰写入 localStorage（themeMode/accent 两个键）',
-      state.localStorage.mode === 'dark' && state.localStorage.accent === 'violet',
+      state.localStorage.mode === 'dark' && state.localStorage.accent === 'pink',
       state.localStorage);
     await app.closeAppearanceMenu(page);
 
@@ -1676,16 +1676,16 @@ const appearanceScenario = {
     await app.emulateColorScheme(page, 'light');
     await app.reloadAppReady(page);
     state = await app.getAppearanceState(page);
-    ctx.check('reload 后保留 mode=dark/accent=violet（系统浅色不覆盖显式深色）',
-      state.html.mode === 'dark' && state.html.theme === 'dark' && state.html.accent === 'violet'
+    ctx.check('reload 后保留 mode=dark/accent=pink（系统浅色不覆盖显式深色）',
+      state.html.mode === 'dark' && state.html.theme === 'dark' && state.html.accent === 'pink'
       && state.mediaDark === false
-      && String(state.cssVars.accent || '').toLowerCase() === app.V134_ACCENT_HEX.violet,
+      && String(state.cssVars.accent || '').toLowerCase() === app.V134_ACCENT_HEX.pink,
       { html: state.html, mediaDark: state.mediaDark, accentVar: state.cssVars.accent });
     await app.openAppearanceMenu(page);
     state = await app.getAppearanceState(page);
     ctx.check('reload 后弹层 active 状态与持久化一致（深色/紫罗兰）',
       state.modes[1].active === true && state.modes[1].ariaPressed === 'true'
-      && state.accents.find((item) => item.accent === 'violet').active === true,
+      && state.accents.find((item) => item.accent === 'pink').active === true,
       { modes: state.modes, accents: state.accents.filter((item) => item.active) });
 
     // 7) 深色下帮助弹窗/输入框/预览
@@ -1769,19 +1769,19 @@ const appearanceScenario = {
     await app.waitAppearanceState(page, (value) => value.html.accent === 'amber',
       null, { label: 'export light amber' });
     const amberCapture = await captureAppearance('light-amber');
-    await app.setAppearance(page, 'dark', 'violet');
-    await app.waitAppearanceState(page, (value) => value.html.accent === 'violet',
-      null, { label: 'export dark violet' });
-    const violetCapture = await captureAppearance('dark-violet');
+    await app.setAppearance(page, 'dark', 'pink');
+    await app.waitAppearanceState(page, (value) => value.html.accent === 'pink',
+      null, { label: 'export dark pink' });
+    const pinkCapture = await captureAppearance('dark-pink');
 
-    const captures = [baseCapture, darkCapture, amberCapture, violetCapture];
+    const captures = [baseCapture, darkCapture, amberCapture, pinkCapture];
     const pngEqual = captures.every((item) => item.png.base64 === baseCapture.png.base64
       && item.png.filename === baseCapture.png.filename);
     const svgEqual = captures.every((item) => item.svg.base64 === baseCapture.svg.base64
       && item.svg.filename === baseCapture.svg.filename);
-    ctx.check('导出隔离：light/dark/amber/violet 下 PNG base64 完全一致',
+    ctx.check('导出隔离：light/dark/amber/pink 下 PNG base64 完全一致',
       pngEqual, captures.map((item) => ({ label: item.label, filename: item.png.filename, length: item.png.base64.length })));
-    ctx.check('导出隔离：light/dark/amber/violet 下 SVG base64 完全一致',
+    ctx.check('导出隔离：light/dark/amber/pink 下 SVG base64 完全一致',
       svgEqual, captures.map((item) => ({ label: item.label, filename: item.svg.filename, length: item.svg.base64.length })));
     ctx.check('外观切换不改变 #preview-svg DOM（innerHTML hash/长度/子层/命中区一致）',
       captures.every((item) => item.preview.hash === baseCapture.preview.hash
@@ -1812,7 +1812,7 @@ const appearanceScenario = {
       null, { label: 'appearance pages 2' });
     const pagesBefore = await app.api.getState(page);
     await app.setAppearance(page, 'light', 'rose');
-    await app.setAppearance(page, 'dark', 'teal');
+    await app.setAppearance(page, 'dark', 'emerald');
     const pagesAfter = await app.api.getState(page);
     ctx.check('外观设置不影响多页状态（pageCount/pageIndex/页面名不变）',
       pagesBefore.pageCount === pagesAfter.pageCount
@@ -1824,7 +1824,7 @@ const appearanceScenario = {
 
     // 最终深色+紫罗兰截图（含内容与弹层）
     await app.setPage(page, 0);
-    await app.setAppearance(page, 'dark', 'violet');
+    await app.setAppearance(page, 'dark', 'pink');
     await app.openAppearanceMenu(page);
     await ctx.screenshot('appearance-dark');
 
@@ -1836,7 +1836,7 @@ const appearanceScenario = {
       },
       modes: state.modes,
       accents: accentResults,
-      persistence: { mode: 'dark', accent: 'violet', afterReload: state.html },
+      persistence: { mode: 'dark', accent: 'pink', afterReload: state.html },
       darkStyles: {
         body: state.styles.body && state.styles.body.background,
         panel: state.styles.panel && state.styles.panel.background,
@@ -2182,7 +2182,7 @@ const configProfileScenario = {
       appliedAgain);
 
     // 10) 配置保存/应用不改变主题/外观；不写入项目自动保存；历史无脏记录
-    await app.setAppearance(page, 'dark', 'violet');
+    await app.setAppearance(page, 'dark', 'pink');
     await app.api.clearAll(page);
     await app.api.setLayout(page, 3, 2);
     await app.waitHistoryCommit(page);
@@ -2193,10 +2193,10 @@ const configProfileScenario = {
     await app.closeConfigDialog(page);
     await waitDialogClosed();
     cfg = await app.getConfigUiState(page);
-    ctx.check('保存配置不改变主题/外观（仍为 dark + violet）',
+    ctx.check('保存配置不改变主题/外观（仍为 dark + pink）',
       cfg.appearance && cfg.appearance.mode === 'dark' && cfg.appearance.theme === 'dark'
-      && cfg.appearance.accent === 'violet' && cfg.htmlTheme === 'dark'
-      && cfg.htmlAccent === 'violet',
+      && cfg.appearance.accent === 'pink' && cfg.htmlTheme === 'dark'
+      && cfg.htmlAccent === 'pink',
       { appearance: cfg.appearance, theme: cfg.htmlTheme, accent: cfg.htmlAccent });
     ctx.check('保存配置不新增项目历史记录（undoCount 不变）',
       JSON.stringify(cfg.history) === JSON.stringify(historyBeforeSave),
@@ -2224,8 +2224,8 @@ const configProfileScenario = {
     let histAfterApply = await app.getHistoryState(page);
     let lookAfterApply = await app.getAppearanceState(page);
     const stateAfterApply = await app.api.getState(page);
-    ctx.check('应用配置后主题仍为 dark + violet',
-      lookAfterApply.html.theme === 'dark' && lookAfterApply.html.accent === 'violet',
+    ctx.check('应用配置后主题仍为 dark + pink',
+      lookAfterApply.html.theme === 'dark' && lookAfterApply.html.accent === 'pink',
       lookAfterApply.html);
     ctx.check('应用配置恢复保存时参数（3×2 / 编号 alpha-paren / Times / PNG）',
       stateAfterApply.layout.rows === 3 && stateAfterApply.layout.cols === 2
@@ -2284,7 +2284,7 @@ const configProfileScenario = {
         afterApply: histAfterApply.undoCount,
         afterSameApply: histAfterSame.undoCount,
       },
-      themeIsolation: { theme: 'dark', accent: 'violet' },
+      themeIsolation: { theme: 'dark', accent: 'pink' },
       autosaveNoConfig: true,
       appliedImages: { before: namesBefore, after: namesAfter },
     };
@@ -2614,7 +2614,7 @@ const hostConfigPersistenceScenario = {
       (await page.evaluate(() => !!localStorage.getItem('figureplay.configProfiles.v1'))) === true);
 
     // 7) 配置存储不影响主题/历史/项目自动保存 payload
-    await app.setAppearance(page, 'dark', 'violet');
+    await app.setAppearance(page, 'dark', 'pink');
     await app.waitHistoryCommit(page);
     const historyBefore = await app.getHistoryState(page);
     const lookBefore = await app.getAppearanceState(page);
@@ -2627,8 +2627,8 @@ const hostConfigPersistenceScenario = {
     await app.waitHistoryCommit(page);
     const lookAfter = await app.getAppearanceState(page);
     const historyAfter = await app.getHistoryState(page);
-    ctx.check('宿主配置保存不改变主题/外观（dark+violet）',
-      lookAfter.html.theme === 'dark' && lookAfter.html.accent === 'violet'
+    ctx.check('宿主配置保存不改变主题/外观（dark+pink）',
+      lookAfter.html.theme === 'dark' && lookAfter.html.accent === 'pink'
       && lookBefore.html.theme === lookAfter.html.theme,
       lookAfter.html);
     ctx.check('宿主配置保存不新增项目历史记录',

@@ -23,7 +23,7 @@
    `WebView2Loader.dll`、`wwwroot`），首次启动自解压到 `%LOCALAPPDATA%\FigurePlay\bin\app-<hash>`，
    从任意目录双击即可运行，不依赖旁边 dll/assets；仍依赖系统 **WebView2 Runtime**。
 
-> 本候选包内嵌的是 **FigurePlay 应用 v1.5.1**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
+> 本候选包内嵌的是 **FigurePlay 应用 v1.5.2**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
 > ink 裁剪并入编号排版盒 + 至少 1mm 安全边距、行/列间距支持 -50～80mm、负间距下选中/悬停顶层描边、
 > 界面外观（浅色/深色/跟随系统 + 7 种主题色）、配置模板（`js/config-profiles.js`）、
 > 矢量 PDF + crop、saveAs 开关、`.fig` EMF 保留等；v1.4.1 起 spec 携带预览文字 bbox 用于编号 WYSIWYG；
@@ -677,6 +677,28 @@ config-profiles 24,871B `81DEF164…`、project-file 7,318B `DD15025A…`、logs
 双 selftest exit 0（多文件 128.8s / 单文件 169.9s）；两个 zip 解压复跑 exit 0。
 真实 WebView2 桥 E2E：`__UPDATES__.check()` → update-info 21ms（latest=1.5.2），`downloadUpdate()` → update-downloaded
 13ms（SHA256 校验、manual=True、不覆盖测试 exe）；`FP.desktop.saveFile()` 工程/配置/PNG 分别 9/2/2ms 立即 resolve。
+
+### 7.12 v1.5.2 保存取消修复与界面反馈
+
+- 应用修复：工程/配置/日志在原生保存对话框**取消后不再回退** showSaveFilePicker/download，不写文件；
+  dialog 可拖动、背景虚化（新增 `js/dialog-drag.js`）；主题色精简（selftest 改为 dark/blue）。
+- 真实 WebView2 E2E（`saveCancelE2E`）：stub 宿主返回 canceled 后调用冻结 app 的
+  `__PROJECT_FILES__.save` / `__CONFIG_PROFILES__.exportProfile` / `__DIAG_LOGS__.export`：
+  **picker 调用 0、download 调用 0、工程/配置/日志均不落盘**；恢复真实宿主 saveFile 后三条成功路径均写文件
+  （工程/配置/日志 file=True）。真实更新 UI E2E 同时保持：`__UPDATES__.check()` 18ms、`downloadUpdate()` 15ms。
+- 正常模式隔离 X/托盘回归：prefs 隔离；记住退出→exit 0、记住最小化→窗口隐藏进程存活；真实 APPDATA 未写。
+
+### 7.13 v1.5.2 产物
+
+| 文件 | 大小 | SHA256 |
+| --- | --- | --- |
+| `dist\FigurePlay.exe` | 434,688 B | `9AD6FE426BC04EC8F6898BD09EFCD0A58610D51C58ACD47F43E096A68D502C91` |
+| `dist-single\FigurePlay.exe` | 920,064 B | `1108C89D62555771D1863338655A424AA67148E110AF603B4B4BB92F2F0AD6D1` |
+| `FigurePlay-desktop-1.5.2-win-x64.zip` | 880,508 B | `F6E786644A7D4E2A052728A182852024ECC1C4A026919FBD253FF255A625FE8D` |
+| `FigurePlay-1.5.2-single-win-x64.zip` | 909,246 B | `93574AFA990134CCA03746577CDA60D2DCE550DB59EF10757F949ED1F395BED5` |
+
+`dist\wwwroot` 26/26 逐字节一致（含 dialog-drag.js）；双 selftest exit 0（多文件 133.7s / 单文件 135.2s）；
+两个 zip 解压复跑 exit 0（saveCancelE2E/updateE2E/saveFileE2E/closePrefs/appearance 全 True）。
 
 ---
 

@@ -5,7 +5,8 @@
   const MODE_KEY = 'figureplay.themeMode';
   const ACCENT_KEY = 'figureplay.accent';
   const MODES = ['light', 'dark', 'system'];
-  const ACCENTS = ['blue', 'indigo', 'teal', 'emerald', 'violet', 'rose', 'amber'];
+  const ACCENTS = ['blue', 'indigo', 'emerald', 'pink', 'rose', 'amber'];
+  const LEGACY_ACCENTS = { teal: 'emerald', violet: 'pink' };
   const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   let mode = 'system';
   let accent = 'blue';
@@ -16,7 +17,12 @@
       const m = localStorage.getItem(MODE_KEY);
       const a = localStorage.getItem(ACCENT_KEY);
       if (MODES.indexOf(m) >= 0) mode = m;
-      if (ACCENTS.indexOf(a) >= 0) accent = a;
+      if (a && LEGACY_ACCENTS[a]) {
+        accent = LEGACY_ACCENTS[a];
+        try { localStorage.setItem(ACCENT_KEY, accent); } catch (e) { /* ignore */ }
+      } else if (ACCENTS.indexOf(a) >= 0) {
+        accent = a;
+      }
     } catch (e) { /* ignore */ }
   }
 

@@ -346,10 +346,14 @@
           filterExtensions: ['.json'],
           base64: b64
         });
-        if (res && res.ok) {
+        if (res) {
           if (res.canceled) return false;
-          FP.toast('已导出配置「' + profile.name + '」' + (res.path ? '：' + res.path : ''), 'success', 3200);
-          return true;
+          if (res.ok) {
+            FP.toast('已导出配置「' + profile.name + '」' + (res.path ? '：' + res.path : ''), 'success', 3200);
+            return true;
+          }
+          FP.toast('导出配置失败：' + (res.error || '原生保存失败'), 'error', 6000);
+          return false;
         }
       } catch (e) {
         // fallback to browser picker/download

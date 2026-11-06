@@ -64,9 +64,13 @@
         const res = await FP.desktop.saveFile({
           suggestedName: name, filterName: 'FigurePlay 诊断日志', filterExtensions: ['.log'], base64: b64
         });
-        if (res && res.ok) {
+        if (res) {
           if (res.canceled) return;
-          FP.toast('诊断日志已保存' + (res.path ? '：' + res.path : ''), 'success', 3500);
+          if (res.ok) {
+            FP.toast('诊断日志已保存' + (res.path ? '：' + res.path : ''), 'success', 3500);
+            return;
+          }
+          FP.toast('诊断日志保存失败：' + (res.error || '原生保存失败'), 'error', 5000);
           return;
         }
       } catch (e) { /* fallback */ }
