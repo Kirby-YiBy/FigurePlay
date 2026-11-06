@@ -2898,6 +2898,105 @@ export async function ensureV140(ctx, page, label = 'v1.4.0 契约') {
     && probe.missingIds.length === 0 && !!probe.snapshotKeys;
 }
 
+/* ==========================================================================
+ * v1.4.1 新增：矢量 PDF label spec 预览 bbox 字段（textLeftMm/textTopMm/textWmm/textHmm）
+ * ========================================================================== */
+
+/** 等待 document.fonts.ready（导出前字体度量稳定） */
+export async function waitFontsReady(page) {
+  return page.evaluate(async () => {
+    if (document.fonts && document.fonts.ready) {
+      try { await document.fonts.ready; } catch (err) { /* ignore */ }
+    }
+    return {
+      status: document.fonts ? document.fonts.status : 'none',
+      hasFonts: !!document.fonts,
+      checkTimes9: document.fonts && typeof document.fonts.check === 'function'
+        ? document.fonts.check('9pt "Times New Roman"') : null,
+    };
+  });
+}
+
+/** 读取预览 SVG 中 .label-text 的文本/getBBox/字体信息（坐标单位 mm） */
+export async function getLabelTextBBoxes(page) {
+  return page.evaluate(() => {
+    const svg = document.getElementById('preview-svg');
+    return Array.from(svg.querySelectorAll('.label-text')).map((node) => {
+      const box = node.getBBox();
+      const style = window.getComputedStyle(node);
+      return {
+        text: (node.textContent || '').trim(),
+        x: box.x, y: box.y, w: box.width, h: box.height,
+        xAttr: Number(node.getAttribute('x')),
+        yAttr: Number(node.getAttribute('y')),
+        fontFamily: style.fontFamily,
+        fontSize: style.fontSize,
+        textAnchor: node.getAttribute('text-anchor'),
+      };
+    });
+  });
+}
+
+/** 用 stub 替换 FP.desktop.exportVectorPdf，捕获导出 spec 与字体状态（不启动 PowerPoint） */
+export async function stubVectorPdfExport(page) {
+  await page.evaluate(() => {
+    window.__vectorExportStub = { count: 0, spec: null, fontStatus: null, at: null };
+    window.FP.desktop.exportVectorPdf = async function (spec) {
+      window.__vectorExportStub.count += 1;
+      window.__vectorExportStub.spec = JSON.parse(JSON.stringify(spec));
+      window.__vectorExportStub.fontStatus = document.fonts ? document.fonts.status : 'none';
+      window.__vectorExportStub.at = performance.now();
+      return {
+        pdfBase64: 'JVBERi0xLjQKJcfsj6IKJSVFT0YK',
+        bytes: 20,
+        engine: 'Stub-PowerPoint',
+        vectorPanels: (spec.panels || []).filter((panel) => panel.image && panel.image.kind === 'emf').length,
+        rasterPanels: (spec.panels || []).filter((panel) => !panel.image || panel.image.kind !== 'emf').length,
+      };
+    };
+  });
+}
+
+export async function getVectorExportStub(page) {
+  return page.evaluate(() => (window.__vectorExportStub ? JSON.parse(JSON.stringify(window.__vectorExportStub)) : null));
+}
+
+/** 调用 API 触发矢量 PDF spec 构建（会 await document.fonts.ready） */
+export async function exportVectorPdfBase64Stub(page) {
+  return page.evaluate(() => window.__FIGPLAY__.exportVectorPdfBase64());
+}
+
+/** 探测 v1.4.1 契约 */
+export async function probeV141(page) {
+  return page.evaluate(() => {
+    const api = window.__FIGPLAY__;
+    return {
+      version: api ? api.version || null : null,
+      apiPresent: !!api,
+      hasExportVectorPdfBase64: !!(api && typeof api.exportVectorPdfBase64 === 'function'),
+      hasDesktop: !!(window.FP && window.FP.desktop && typeof window.FP.desktop.exportVectorPdf === 'function'),
+      hasFonts: !!document.fonts,
+      fontsStatus: document.fonts ? document.fonts.status : 'none',
+      labelTextCount: document.querySelectorAll('#preview-svg .label-text').length,
+    };
+  });
+}
+
+/** 场景启动守卫：v1.4.1 label bbox 契约 */
+export async function ensureV141(ctx, page, label = 'v1.4.1 契约') {
+  const probe = await probeV141(page);
+  ctx.evidence.v141Probe = probe;
+  ctx.check(`${label}：应用版本 >= 1.4.1（当前 ${probe.version || 'unknown'}）`,
+    /^1\.(?:4\.[1-9]|[5-9]\.|[1-9]\d\.)|^[2-9]\./.test(String(probe.version || '')), probe.version);
+  ctx.check(`${label}：exportVectorPdfBase64 API 可用`,
+    probe.hasExportVectorPdfBase64 === true);
+  ctx.check(`${label}：document.fonts 可用（字体度量稳定）`,
+    probe.hasFonts === true, { fontsStatus: probe.fontsStatus });
+  ctx.note('v1.4.1 label bbox 契约探测（信息，非问题）', JSON.stringify(probe));
+  return probe.hasExportVectorPdfBase64 && probe.hasFonts;
+}
+
+
 
 
 

@@ -1163,6 +1163,14 @@ const negativeGapScenario = {
       const layout = window.__FIGPLAY__.getState().layout;
       return layout.colGap === -10 && layout.rowGap === -10;
     }, null, { timeout: 5000, label: 'negative gaps -10' });
+    // 等待几何真正按负行距重排（避免状态已变但预览面板坐标仍为旧值的瞬时竞态）
+    await app.waitFor(page, () => {
+      const info = window.__FIGPLAY__.getPreviewInfo();
+      const p0 = (info.panels || []).find((panel) => panel.row === 0 && panel.col === 0);
+      const p2 = (info.panels || []).find((panel) => panel.row === 1 && panel.col === 0);
+      if (!p0 || !p2) return false;
+      return (p0.y + p0.h - p2.y) >= 8 && info.geom.heightMm < 130;
+    }, null, { timeout: 8000, label: 'negative gap geometry applied' });
     const grid1 = await app.getGridUiState(page);
     const info1 = await app.api.getPreviewInfo(page);
     const geom1 = info1.geom;
@@ -1876,6 +1884,7 @@ const configProfileScenario = {
 
     await app.openAppReady(page);
     if (!(await app.ensureV140(ctx, page))) return;
+    const appVersion = await page.evaluate(() => window.__FIGPLAY__.version);
     await app.clearConfigProfiles(page);
     await app.api.clearAll(page);
 
@@ -1940,7 +1949,7 @@ const configProfileScenario = {
     ctx.check('localStorage 配置结构完整（type/schemaVersion/name/description/appVersion/createdAt/layout/label/export）',
       storedProfile.type === 'figureplay-config' && storedProfile.schemaVersion === 1
       && storedProfile.name === '3×2 论文模板' && /Arial 11pt/.test(storedProfile.description || '')
-      && storedProfile.appVersion === '1.4.0' && !!Date.parse(storedProfile.createdAt || '')
+      && storedProfile.appVersion === appVersion && !!Date.parse(storedProfile.createdAt || '')
       && storedProfile.layout.rows === 3 && storedProfile.layout.cols === 2
       && storedProfile.label.fontFamily === 'arial'
       && storedProfile.export.format === 'pdf',
@@ -2046,7 +2055,7 @@ const configProfileScenario = {
     ctx.check('导出 payload：type/schemaVersion/name/description/appVersion/createdAt/layout/label/export 完整',
       !!configJson && configJson.type === 'figureplay-config' && configJson.schemaVersion === 1
       && configJson.name === '3×2 论文模板' && /Arial 11pt/.test(configJson.description || '')
-      && configJson.appVersion === '1.4.0' && !!Date.parse(configJson.createdAt || '')
+      && configJson.appVersion === appVersion && !!Date.parse(configJson.createdAt || '')
       && configJson.layout.rows === 3 && configJson.layout.cols === 2
       && configJson.label.fontFamily === 'arial' && configJson.export.format === 'pdf'
       && Object.keys(configJson).sort().join(',') === 'appVersion,createdAt,description,export,label,layout,name,schemaVersion,type',
@@ -2067,7 +2076,7 @@ const configProfileScenario = {
       cfg.ui.importName === '3×2 论文模板'
       && /Arial 11pt/.test(cfg.ui.importDesc || '')
       && /3 行 × 2 列/.test(cfg.ui.importSummary || '')
-      && /来源版本 1\.4\.0/.test(cfg.ui.importMeta || '')
+      && new RegExp('来源版本 ' + String(appVersion).replace(/\./g, '\\.')).test(cfg.ui.importMeta || '')
       && cfg.storage.length === 1 && cfg.ui.importApplyVisible === true
       && cfg.ui.importSaveVisible === true,
       { preview: cfg.ui, storage: cfg.storage.names });
@@ -2279,6 +2288,150 @@ const configProfileScenario = {
   },
 };
 
+/* ----------------------------- Y 矢量 label 预览 bbox ----------------------------- */
+const labelSpecBBoxScenario = {
+  code: 'Y',
+  name: 'label-spec-bbox',
+  title: '矢量标签bbox',
+  description: '配置1（2×3/170mm/4:3/colGap-4/rowGap1/autoPad，label bc/inset1.5/offsetX1/offsetY4/Times9）下 stub FP.desktop.exportVectorPdf 捕获 spec：labels 含 textLeftMm/textTopMm/textWmm/textHmm，与预览 .label-text getBBox 一致（±0.05mm）；(c) top≈43.58/height≈3.44；导出前 await document.fonts.ready 且 bbox 稳定',
+  async run(ctx) {
+    const { page } = ctx;
+    await app.installDesktopBridgeMock(page);
+    await app.openAppReady(page);
+    if (!(await app.ensureV13(ctx, page))) return;
+    if (!(await app.ensureV141(ctx, page))) return;
+    await app.api.clearAll(page);
+
+    // 配置1：2 行×3 列 / 170mm / 4:3 / colGap -4 / rowGap 1 / autoPad 默认开
+    await app.api.setLayout(page, 2, 3);
+    await app.setNumberInput(page, '#width-input', 170);
+    await app.setNumberInput(page, '#aspect-w', 4);
+    await app.setNumberInput(page, '#aspect-h', 3);
+    await app.setLayoutOptions(page, { margin: 0, colGap: -4, rowGap: 1, autoPad: true });
+    await app.setLabelConfig(page, {
+      show: true, position: 'bc', insetMm: 1.5,
+      offsetXmm: 1, offsetYmm: 4, fontFamily: 'times', fontSizePt: 9,
+    });
+    await app.uploadFiles(page, [
+      samplePath('sample-1.png'), samplePath('sample-2.png'), samplePath('sample-3.png'),
+      samplePath('sample-4.png'), samplePath('sample-5.png'), samplePath('sample-6.png'),
+    ], null, 6);
+    await app.clickFormat(page, 'pdf');
+
+    // 通过桌面桥导入带 EMF 的 .fig（使矢量 PDF 可用）
+    const figCountBefore = await app.bridgeMessageCount(page, 'import-fig');
+    const fakeFig = await app.createFakeFigFile(path.join(ctx.runDir, 'tmp'), 'emf-label-bbox.fig');
+    await app.uploadFigFile(page, fakeFig, 0);
+    const figRequest = await app.waitFigImportRequest(page, figCountBefore + 1);
+    const emfBase64 = Buffer.from(`FigurePlay-E2E-LABEL-BBOX-${'B'.repeat(128)}`).toString('base64');
+    await app.respondFigImported(page, figRequest, {
+      dataUrl: app.fileToDataUrl(samplePath('sample-1.png'), 'image/png'),
+      width: 1200, height: 900, sourceFormat: 'MATLAB-FIG', emfBase64,
+    });
+    try {
+      await app.waitFigCell(page, 0, { expectedWidth: 1200, expectedHeight: 900, timeout: 15000 });
+    } catch (err) { /* 断言在下面统一给出 */ }
+    fs.rmSync(fakeFig, { force: true });
+    const vectorStatus = await app.getVectorStatus(page);
+    ctx.check('配置1就绪：6 子图/编号（EMF 矢量图可用、PDF 格式）',
+      vectorStatus.emfCount === 1 && vectorStatus.unsupported === false
+      && (await app.api.getPreviewInfo(page)).imageCount === 6,
+      { vectorStatus, imageCount: (await app.api.getPreviewInfo(page)).imageCount });
+
+    // 字体 ready 后测量预览 bbox
+    const fonts = await app.waitFontsReady(page);
+    const geom = await app.getGeom(page);
+    const pads = await app.getPadInfo(page);
+    const domBoxes = await app.getLabelTextBBoxes(page);
+    ctx.check('字体已 ready（document.fonts.status=loaded）',
+      fonts.status === 'loaded', fonts);
+    ctx.check('配置1 预览编号 6 个且文本为 (a)…(f)',
+      domBoxes.length === 6
+      && domBoxes.map((item) => item.text).join(',') === '(a),(b),(c),(d),(e),(f)',
+      domBoxes.map((item) => item.text));
+    ctx.check('配置1 autoPad 生效（页面高度=base+底部页距、标签在页内）',
+      pads.autoPad === true && pads.bottom > 0
+      && geom.heightMm > pads.baseHeightMm,
+      { geom, pads });
+    ctx.check('预览 label-text 使用 Times 字体（9pt 字号见 spec 断言）',
+      domBoxes.every((item) => /times/i.test(item.fontFamily) && item.textAnchor === 'middle'),
+      { fontFamily: domBoxes[0] && domBoxes[0].fontFamily, textAnchor: domBoxes[0] && domBoxes[0].textAnchor });
+
+    // stub exportVectorPdf，调用 API 构建 spec
+    await app.stubVectorPdfExport(page);
+    const firstExport = await app.exportVectorPdfBase64Stub(page);
+    const firstStub = await app.getVectorExportStub(page);
+    const spec = firstStub && firstStub.spec;
+    ctx.check('stub 捕获矢量导出成功（exportVectorPdfBase64.ok=true，调用 1 次）',
+      !!firstExport && firstExport.ok === true && !!firstStub && firstStub.count === 1,
+      { exportResult: firstExport, stubCount: firstStub && firstStub.count });
+    ctx.check('spec.labels 6 项且每项含 textLeftMm/textTopMm/textWmm/textHmm（有限数值）',
+      !!spec && Array.isArray(spec.labels) && spec.labels.length === 6
+      && spec.labels.every((item) => [item.textLeftMm, item.textTopMm, item.textWmm, item.textHmm]
+        .every((value) => typeof value === 'number' && isFinite(value))),
+      spec && spec.labels);
+    const bboxCompare = spec && spec.labels ? spec.labels.map((item, i) => {
+      const dom = domBoxes[i] || { text: null, x: NaN, y: NaN, w: NaN, h: NaN };
+      return {
+        text: item.text, domText: dom.text,
+        dx: Math.abs(item.textLeftMm - dom.x),
+        dy: Math.abs(item.textTopMm - dom.y),
+        dw: Math.abs(item.textWmm - dom.w),
+        dh: Math.abs(item.textHmm - dom.h),
+        spec: { left: item.textLeftMm, top: item.textTopMm, w: item.textWmm, h: item.textHmm },
+        dom: { x: dom.x, y: dom.y, w: dom.w, h: dom.h },
+      };
+    }) : [];
+    ctx.check('spec.labels text 与预览编号顺序/文本一致',
+      bboxCompare.every((item) => item.text === item.domText),
+      bboxCompare.map((item) => ({ spec: item.text, dom: item.domText })));
+    ctx.check('spec bbox 四字段与预览 .label-text getBBox 一致（±0.05mm）',
+      bboxCompare.every((item) => item.dx <= 0.05 && item.dy <= 0.05
+        && item.dw <= 0.05 && item.dh <= 0.05),
+      bboxCompare);
+    const labelC = bboxCompare.find((item) => item.text === '(c)') || null;
+    ctx.check('配置1 (c) 的 textTopMm≈43.58、textHmm≈3.44（±0.15/±0.1）',
+      !!labelC && Math.abs(labelC.spec.top - 43.58) <= 0.15
+      && Math.abs(labelC.spec.h - 3.44) <= 0.1 && labelC.spec.w > 0,
+      labelC);
+    ctx.check('spec 同时保留字号/字体/对齐等原有 label 字段',
+      spec && spec.labels.every((item) => item.fontSizePt === 9
+        && /Times/i.test(String(item.fontName || '')) && !!item.align),
+      spec && spec.labels.map((item) => ({ size: item.fontSizePt, font: item.fontName, align: item.align })));
+    ctx.check('stub 捕获时字体状态已 loaded（导出路径 await document.fonts.ready）',
+      firstStub.fontStatus === 'loaded', firstStub.fontStatus);
+
+    // 再次导出：await fonts.ready 后 bbox 稳定（不抖动）
+    const fontsAgain = await app.waitFontsReady(page);
+    const secondExport = await app.exportVectorPdfBase64Stub(page);
+    const secondStub = await app.getVectorExportStub(page);
+    const domBoxesAfter = await app.getLabelTextBBoxes(page);
+    ctx.check('第二次导出 spec.labels bbox 与第一次完全一致（字体 ready 后无抖动）',
+      !!secondExport && secondExport.ok === true && !!secondStub && secondStub.count === 2
+      && JSON.stringify(secondStub.spec.labels) === JSON.stringify(spec.labels),
+      { count: secondStub && secondStub.count, fontStatusAgain: secondStub && secondStub.fontStatus });
+    ctx.check('两次导出间预览 getBBox 不变（字体度量稳定）',
+      JSON.stringify(domBoxesAfter.map((item) => [item.text, item.x, item.y, item.w, item.h]))
+        === JSON.stringify(domBoxes.map((item) => [item.text, item.x, item.y, item.w, item.h])),
+      { fontsAgain, before: domBoxes.map((i) => i.text), after: domBoxesAfter.map((i) => i.text) });
+    ctx.check('第二次导出在字体 ready 后捕获（fontStatus=loaded）',
+      secondStub && secondStub.fontStatus === 'loaded', secondStub && secondStub.fontStatus);
+
+    ctx.evidence.labelBBox = {
+      fonts: { status: fonts.status, statusAgain: fontsAgain.status, checkTimes9: fonts.checkTimes9 },
+      geom: { rows: geom.rows, cols: geom.cols, widthMm: geom.widthMm, heightMm: geom.heightMm, cellW: geom.cellW, cellH: geom.cellH },
+      pads,
+      vectorStatus,
+      labels: bboxCompare,
+      labelC,
+      specLabels: spec && spec.labels,
+      expectedC: { textTopMm: 43.58, textHmm: 3.44 },
+    };
+    await ctx.screenshot('label-spec-bbox');
+    await app.api.clearAll(page);
+  },
+};
+
 export const scenariosV13 = [
   gridCustomScenario,
   saveAsScenario,
@@ -2289,4 +2442,5 @@ export const scenariosV13 = [
   negativeGapScenario,
   appearanceScenario,
   configProfileScenario,
+  labelSpecBBoxScenario,
 ];

@@ -265,6 +265,21 @@ namespace FigurePlay.Desktop.Bridge
                     label.BoxYmm = GetDouble(labelJson, "boxYmm", label.YMm);
                     label.BoxWmm = GetDouble(labelJson, "boxWmm", 0);
                     label.BoxHmm = GetDouble(labelJson, "boxHmm", 0);
+
+                    // v1.4.1：可选预览文字 bbox；四个字段齐全且宽高有效时才启用 WYSIWYG 校正
+                    if (labelJson["textLeftMm"] != null && labelJson["textTopMm"] != null &&
+                        labelJson["textWmm"] != null && labelJson["textHmm"] != null)
+                    {
+                        label.TextLeftMm = GetDouble(labelJson, "textLeftMm", 0);
+                        label.TextTopMm = GetDouble(labelJson, "textTopMm", 0);
+                        label.TextWmm = GetDouble(labelJson, "textWmm", 0);
+                        label.TextHmm = GetDouble(labelJson, "textHmm", 0);
+                        label.HasTextBbox =
+                            !double.IsNaN(label.TextLeftMm) && !double.IsNaN(label.TextTopMm) &&
+                            !double.IsNaN(label.TextWmm) && !double.IsNaN(label.TextHmm) &&
+                            !double.IsInfinity(label.TextLeftMm) && !double.IsInfinity(label.TextTopMm) &&
+                            label.TextWmm > 0.01 && label.TextHmm > 0.01;
+                    }
                     label.FontSizePt = GetDouble(labelJson, "fontSizePt", 10);
                     if (label.FontSizePt <= 0 || label.FontSizePt > 300)
                     {
@@ -402,6 +417,17 @@ namespace FigurePlay.Desktop.Bridge
         public double BoxWmm { get; set; }
 
         public double BoxHmm { get; set; }
+
+        // v1.4.1：app 预览 SVG 实际文字 bbox（mm，页面坐标；用于 WYSIWYG 垂直/水平校正）
+        public double TextLeftMm { get; set; }
+
+        public double TextTopMm { get; set; }
+
+        public double TextWmm { get; set; }
+
+        public double TextHmm { get; set; }
+
+        public bool HasTextBbox { get; set; }
 
         public double FontSizePt { get; set; } = 10;
 

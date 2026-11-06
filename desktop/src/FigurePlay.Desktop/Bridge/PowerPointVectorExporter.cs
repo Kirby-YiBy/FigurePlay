@@ -337,6 +337,76 @@ namespace FigurePlay.Desktop.Bridge
                    message.IndexOf("被调用方", StringComparison.Ordinal) >= 0;
         }
 
+        /// <summary>
+        /// v1.4.1：读取 PowerPoint 实际文字 bbox（TextFrame2.TextRange.Bound*，slide 坐标 pt），
+        /// 把文字 bbox 中心平移到 app 预览 bbox 中心（页面坐标 - crop 偏移），并重设对齐。
+        /// </summary>
+        private static bool TryAlignTextBBox(
+            dynamic textbox,
+            dynamic textRange,
+            VectorPdfLabel label,
+            double offsetX,
+            double offsetY,
+            VectorPdfResult result)
+        {
+            try
+            {
+                dynamic textFrame2 = textbox.TextFrame2;
+                dynamic range2 = textFrame2.TextRange;
+                double boundLeft = Convert.ToDouble(range2.BoundLeft);
+                double boundTop = Convert.ToDouble(range2.BoundTop);
+                double boundWidth = Convert.ToDouble(range2.BoundWidth);
+                double boundHeight = Convert.ToDouble(range2.BoundHeight);
+                if (double.IsNaN(boundLeft) || double.IsNaN(boundTop) ||
+                    double.IsNaN(boundWidth) || double.IsNaN(boundHeight) ||
+                    double.IsInfinity(boundLeft) || double.IsInfinity(boundTop) ||
+                    boundWidth <= 0 || boundHeight <= 0)
+                {
+                    return false;
+                }
+
+                double actualCx = boundLeft + boundWidth / 2.0;
+                double actualCy = boundTop + boundHeight / 2.0;
+                double targetCx = (label.TextLeftMm + label.TextWmm / 2.0 - offsetX) * MmToPt;
+                double targetCy = (label.TextTopMm + label.TextHmm / 2.0 - offsetY) * MmToPt;
+                // 横向保持 v1.4.0 已验证的锚点放置（PowerPoint bound 与 SVG bbox 有 ~0.4mm 的字体度量差）；
+                // 本次只做纵向 WYSIWYG：按实际文字 bbox 垂直中心对齐 app 预览 bbox 的垂直中心。
+                double dx = 0;
+                double dy = targetCy - actualCy;
+                if (Math.Abs(dy) > 0.0005)
+                {
+                    textbox.Top = (float)(Convert.ToDouble(textbox.Top) + dy);
+                }
+
+                textRange.ParagraphFormat.Alignment = AlignToPowerPoint(label.Align);
+
+                try
+                {
+                    double boundLeft2 = Convert.ToDouble(range2.BoundLeft);
+                    double boundTop2 = Convert.ToDouble(range2.BoundTop);
+                    double boundWidth2 = Convert.ToDouble(range2.BoundWidth);
+                    double boundHeight2 = Convert.ToDouble(range2.BoundHeight);
+                    result.Diagnostics.Add(string.Format(
+                        "label text-bbox: dx={0:0.###}pt dy={1:0.###}pt -> center=({2:0.###},{3:0.###})pt target=({4:0.###},{5:0.###})pt",
+                        dx, dy,
+                        boundLeft2 + boundWidth2 / 2.0,
+                        boundTop2 + boundHeight2 / 2.0,
+                        targetCx, targetCy));
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                result.Diagnostics.Add("label TextFrame2 边界读取失败：" + ex.Message);
+                return false;
+            }
+        }
+
         // ---------------------------------------------------------------- 组版
 
         // ---------------------------------------------------------------- 组版
@@ -709,6 +779,31 @@ namespace FigurePlay.Desktop.Bridge
                         catch
                         {
                             // ignore
+                        }
+
+                        // v1.4.1：优先用 PowerPoint 实际文字 bbox（TextFrame2.TextRange 的 Bound*，slide 坐标 pt）
+                        // 把文字 bbox 中心对齐到 app 预览 getBBox（textLeft/textTop/textW/textH - crop 偏移）。
+                        if (!hasBackground && label.HasTextBbox)
+                        {
+                            bool aligned = TryAlignTextBBox(
+                                textbox, textRange, label, offsetX, offsetY, result);
+                            if (!aligned)
+                            {
+                                // 兜底：按 fontSize 的 leading 经验补偿（实测 Times 9pt 约 0.48mm ≈ 0.15 × 字号）
+                                try
+                                {
+                                    double leadingPt = label.FontSizePt * 0.15;
+                                    textbox.Top = (float)(Convert.ToDouble(textbox.Top) - leadingPt);
+                                    textRange.ParagraphFormat.Alignment = AlignToPowerPoint(label.Align);
+                                    result.Diagnostics.Add(string.Format(
+                                        "label[{0}] TF2 bound 不可用，按 leading 补偿 -{1:0.###}pt",
+                                        labelIndex, leadingPt));
+                                }
+                                catch
+                                {
+                                    // ignore
+                                }
+                            }
                         }
 
                         try

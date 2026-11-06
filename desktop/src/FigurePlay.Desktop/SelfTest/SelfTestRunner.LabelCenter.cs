@@ -252,6 +252,10 @@ namespace FigurePlay.Desktop.SelfTest
         {
             public double X;
             public double Y;
+            public double LeftMm;
+            public double RightMm;
+            public double TopMm;
+            public double BottomMm;
         }
 
         /// <summary>从 pdftotext -bbox 输出解析每个 word 的中心（pt → mm），key 为去掉括号/标点后的字母。</summary>
@@ -295,6 +299,10 @@ namespace FigurePlay.Desktop.SelfTest
                 {
                     X = (xMin + xMax) / 2.0 / 72.0 * 25.4,
                     Y = (yMin + yMax) / 2.0 / 72.0 * 25.4,
+                    LeftMm = xMin / 72.0 * 25.4,
+                    RightMm = xMax / 72.0 * 25.4,
+                    TopMm = yMin / 72.0 * 25.4,
+                    BottomMm = yMax / 72.0 * 25.4,
                 };
             }
 

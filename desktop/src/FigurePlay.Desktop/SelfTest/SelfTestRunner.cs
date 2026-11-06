@@ -190,10 +190,6 @@ namespace FigurePlay.Desktop.SelfTest
                 JObject vectorPdf = await RunVectorPdfTestAsync();
                 _report["vectorPdf"] = vectorPdf;
 
-                // v1.3.3：持久幂等会话的冷/热导出耗时 + 显式 shutdown 残留检查
-                JObject powerPointLifecycle = await RunPowerPointLifecycleCheckAsync();
-                _report["powerPointLifecycle"] = powerPointLifecycle;
-
                 // 3.4) WebView2 文件保存 API 能力探测（Lead 侧 showSaveFilePicker 兜底判断）
                 JObject saveFilePicker = await CheckSaveFilePickerAsync();
                 _report["saveFilePicker"] = saveFilePicker;
@@ -209,6 +205,14 @@ namespace FigurePlay.Desktop.SelfTest
                 // 6) console error / 未捕获异常
                 JObject console = await CollectConsoleErrorsAsync();
                 _report["console"] = console;
+
+                // 6.1) v1.4.1 用户 config1 场景：编号 WYSIWYG 垂直/水平位置
+                JObject config1Label = await RunConfig1LabelWysiwygTestAsync();
+                _report["config1Label"] = config1Label;
+
+                // v1.3.3/1.4.1：所有 PowerPoint 用例（含 config1 编号导出）完成后再统一 shutdown 并检查残留
+                JObject powerPointLifecycle = await RunPowerPointLifecycleCheckAsync();
+                _report["powerPointLifecycle"] = powerPointLifecycle;
 
                 // 7) 汇总
                 List<string> failures = new List<string>();
@@ -290,6 +294,15 @@ namespace FigurePlay.Desktop.SelfTest
                 if (!screenshot.Value<bool>("ok"))
                 {
                     failures.Add("窗口截图失败：" + (screenshot.Value<string>("error") ?? "未知原因"));
+                }
+
+                bool config1LabelOk = _report["config1Label"] is JObject &&
+                                      ((JObject)_report["config1Label"]).Value<bool>("ok");
+                if (!config1LabelOk)
+                {
+                    JObject cfg = _report["config1Label"] as JObject;
+                    failures.Add("config1 编号 WYSIWYG 测试失败：" +
+                                 (cfg == null ? "未生成报告" : (cfg.Value<string>("error") ?? "未知原因")));
                 }
 
                 int consoleErrorCount = console.Value<int>("errorCount");

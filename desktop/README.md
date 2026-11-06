@@ -23,15 +23,16 @@
    `WebView2Loader.dll`、`wwwroot`），首次启动自解压到 `%LOCALAPPDATA%\FigurePlay\bin\app-<hash>`，
    从任意目录双击即可运行，不依赖旁边 dll/assets；仍依赖系统 **WebView2 Runtime**。
 
-> 本候选包内嵌的是 **FigurePlay 应用 v1.4.0**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
+> 本候选包内嵌的是 **FigurePlay 应用 v1.4.1**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
 > ink 裁剪并入编号排版盒 + 至少 1mm 安全边距、行/列间距支持 -50～80mm、负间距下选中/悬停顶层描边、
-> 界面外观（浅色/深色/跟随系统 + 7 种主题色）、**配置模板（v1.4.0 新增 `js/config-profiles.js`）**、
-> 矢量 PDF + crop、saveAs 开关、`.fig` EMF 保留等）；`dist\wwwroot` 与构建时 `E:\FigurePlay` 冻结源文件
-> **逐字节一致**（20 个文件），桌面版桥协议见第 4 节。
+> 界面外观（浅色/深色/跟随系统 + 7 种主题色）、配置模板（`js/config-profiles.js`）、
+> 矢量 PDF + crop、saveAs 开关、`.fig` EMF 保留等；v1.4.1 起 spec 额外携带预览文字 bbox
+> `textLeftMm/textTopMm/textWmm/textHmm`，用于编号 WYSIWYG 校正）；`dist\wwwroot` 与构建时
+> `E:\FigurePlay` 冻结源文件 **逐字节一致**（20 个文件），桌面版桥协议见第 4 节。
 
 技术栈：**.NET Framework 4.8**（Windows 10/11 自带运行时，最终用户无需安装 .NET）
-\+ **Microsoft.Web.WebView2**（WinForms）。多文件版约 2.34 MB（dist 27 文件，wwwroot 20 + 7 运行文件），
-单文件版约 **0.82 MB**（856,576 B）。
+\+ **Microsoft.Web.WebView2**（WinForms）。多文件版约 2.36 MB（dist 27 文件，wwwroot 20 + 7 运行文件），
+单文件版约 **0.82 MB**（862,208 B）。
 
 ---
 
@@ -85,7 +86,7 @@ desktop\
 │   ├─ WebView2Loader.dll
 │   ├─ Newtonsoft.Json.dll
 │   ├─ 使用说明.txt
-│   └─ wwwroot\                  ← 构建时复制的最新网页应用（v1.4.0：多页/分组/撤销/矢量 PDF/crop/外观主题/配置模板，20 个文件）
+│   └─ wwwroot\                  ← 构建时复制的最新网页应用（v1.4.1：多页/分组/撤销/矢量 PDF/crop/外观主题/配置模板，20 个文件）
 ├─ dist-single\                  ← 单文件版（目录中只有 FigurePlay.exe）
 │   └─ FigurePlay.exe
 ├─ selftest\                     ← 多文件版最近一次自测输出
@@ -135,8 +136,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 10. 打印两个 exe 的路径/大小/SHA256、`app.js` SHA256、dist 大小、zip 大小、自测结果与总耗时。
 
 > 构建机会**串行**跑两次完整自测（先多文件、退出后再单文件；含两次 MATLAB 启动 + 首次 PowerPoint
-> 冷启动，持久会话让后续导出 <1s，另含外观主题 PNG 导出比对与编号中心校验），总耗时约 **4–5 分钟**
-> （本机实测 275.5s）。可用 `-SkipSingleFile` 只构建多文件版，或用 `-SkipSelfTest` 跳过自测。
+> 冷启动，持久会话让后续导出 <1s，另含外观主题 PNG 导出比对、编号中心与 config1 WYSIWYG 校验），
+> 总耗时约 **4–5 分钟**（本机实测 292.2s）。可用 `-SkipSingleFile` 只构建多文件版，或用 `-SkipSelfTest` 跳过自测。
 
 ### 2.3 常用参数
 
@@ -432,7 +433,7 @@ MATLAB 路径与版本会缓存（`MatlabLocator`），避免重复探测。
   重置会话。主窗口就绪后延迟 1.5s 后台预热（只启动 Application，不创建演示文稿；selftest 不预热）；
 - 坐标/单位：所有 mm → pt（×72/25.4）；crop 平移规则见 4.3。见 7.5。
 
-### 7.3 实测结果（本机，v1.4.0）
+### 7.3 实测结果（本机，v1.4.1）
 
 - 170×120mm 页面：**481.92×340.08 pt**、`pdfimages` 0 位图、`pdftotext` 可提取标签文字 `(a)`；
 - 宿主级 crop 150×100mm（实心 EMF，stretch）+ trimMargin：
@@ -446,8 +447,8 @@ MATLAB 路径与版本会缓存（`MatlabLocator`），避免重复探测。
   - trim=0（安全边距 1mm）→ 页 **72.94×65.53mm**，四边余量 **1.02/1.02/1.02/1.02mm**，
     底部 9mm 条带编号墨迹 **279px**、`pdftotext` 提取到 `(a)`，编号完整不裁；
   - trim=2mm → 页 **74.93×67.56mm**，四边余量 **2.03/2.03/2.20/2.20mm**，底部编号墨迹 **275px**、文本正常；
-- **持久会话冷/热导出（v1.4.0 实测）**：多文件版首次导出 **26.9s**（含 PowerPoint 冷启动 24.8s）→ 第二次 **0.54s**
-  （提速 98.0%）；单文件版 **31.7s**（冷启动 27.4s）→ **0.78s**（提速 97.5%）；selftest 中连续导出 7 次复用
+- **持久会话冷/热导出（v1.4.1 实测）**：多文件版首次导出 **26.9s**（含 PowerPoint 冷启动 24.9s）→ 第二次 **0.53s**
+  （提速 98.0%）；单文件版 **26.9s**（冷启动 24.6s）→ **0.53s**（提速 98.1%）；selftest 中连续导出 7 次复用
   同一实例；结束显式 shutdown 后 `POWERPNT` 残留数为 **0**（用户原有实例不受影响）。
 
 ### 7.4 安全边距 + 二次墨迹校正（v1.3.2，解决“trim=0 时底部编号被裁”）
@@ -495,7 +496,7 @@ v1.3.2 修复：
 > 实测：首次导出 26.9s（冷启动 24.9s）→ 后续 0.53s（-98%）；selftest 连续 7 次导出均复用同一实例，
 > 结束后 POWERPNT 残留 0。应用正常退出/关闭窗口同样会清理自己启动的 PowerPoint。
 
-### 7.6 编号锚点修复（v1.4.0，解决预览与 PDF 编号位置不一致）
+### 7.6 编号锚点与垂直 WYSIWYG 修复（v1.4.0 / v1.4.1）
 
 用户反馈 Test5.pdf 中 (a)/(b) 编号整体左偏约 3.19mm。排查确认是宿主标签文本框放置问题：
 1. 旧实现直接把 app 的 padded `BoxXmm` 当文本框左边界，带来 padX 量级偏移；
@@ -516,6 +517,25 @@ bottom-center Arial 11、锚点 42.5/127.5mm；宿主扩展后 final crop.x=4.54
   → 误差 **-0.026mm / -0.003mm**（≤0.5mm，通过）；
 - trim=0 四边余量仍 **1.02mm**（trim=2 为 2.03–2.20mm）、底部编号墨迹 278px（不裁）、**0 位图**；
 - 样例：`selftest\vector-pdf-label-center.pdf`。
+
+#### v1.4.1：编号垂直位置 WYSIWYG（Test6/config1 场景）
+
+用户 Test6 中 (c) 在 PDF 里比预览下移约 0.48mm。应用 v1.4.1 在 label spec 中新增预览 SVG
+`getBBox` 的实际文字边界 `textLeftMm/textTopMm/textWmm/textHmm`。宿主改为：
+
+1. **水平保持 v1.4.0 已验证的锚点方案**（`label.XMm`+对齐方式，不用 BoundLeft 改水平位置）；
+2. **垂直用 `TextFrame2.TextRange.BoundTop/BoundHeight`** 读取 PowerPoint 实际文字 bbox 中心，
+   把 `textTopMm+textHmm/2-crop.y` 作为目标，写回 `shape.Top` 并重设 Alignment；
+3. 文本/字体/对齐设置完成后重新写回 `shape.Width/Height/Left/Top`（修复 WordWrap=false 压缩宽度问题）；
+4. Bound 不可用时按 `0.15 × fontSizePt` 做 leading 兜底补偿，并写 diagnostics；
+5. 背景非 none 的标签仍保留 app 原背景 box。
+
+config1 精确场景（2 行×3 列 / 170mm / 4:3 / colGap=-4 / rowGap=1 / autoPad、bc/inset1.5/
+offsetX1/offsetY4/Times 9pt、trim=0）selftest 通过捕获 app 实际 spec + 宿主 trace 最终 crop 后校验：
+- 垂直误差：top **0.154mm**、bottom **0.072mm**、center **0.113mm**（判据 ≤0.35mm）；
+- 水平中心误差 **-0.011mm**（判据 ≤0.05mm）；
+- PDF 0 位图；trim 四边余量仍 ≈1–1.2mm、底部编号墨迹 328px 不裁；
+- 样例：`selftest\config1-label-wysiwyg.pdf`。
 
 ---
 
@@ -541,6 +561,7 @@ dist\FigurePlay.exe --selftest --out .\selftest --screenshot .\selftest\my-shot.
 | 桌面布局（三栏回归） | 默认窗口下量测 `.panel-left` / `#stage` / `.panel-right` | 三栏并排不堆叠、`#stage` 宽 ≥250px、无横向溢出 |
 | 外观主题冒烟（v1.3.4） | WebView2 内 `__FIGPLAY__.setAppearance('dark','violet')` → 校验 html data-*、body 深色、`#figure-shell` 白；再恢复 `light/blue`；深/浅/恢复各导出一次 PNG 做逐字节比对 | `html[data-theme=dark]`/`data-accent=violet`、body 亮度 <110、figure-shell 白；深色与恢复后 PNG 均与浅色基准**逐字节一致**；console error 增量 0 |
 | 编号中心/锚点（v1.4.0） | 宿主级 3×2、bottom-center Arial 11、crop.x=5.546mm、trimMargin=1；`pdftotext -bbox` 提取 (a)/(b) 文本中心 | 文本中心 = cellCenter - finalCrop.x（±0.5mm；本机误差 -0.026/-0.003mm）；四边余量 1.02mm、底部编号墨迹 278px、0 位图 |
+| config1 编号 WYSIWYG（v1.4.1） | 应用内恢复 config1：2行×3列/170/4:3/colGap-4/rowGap1/autoPad、label bc/inset1.5/offsetX1/offsetY4/Times9、trim0；包装 `exportVectorPdf` 捕获 spec（含 text bbox），宿主 trace 取最终 crop，`pdftotext -bbox` 对 (a) 校验 | 垂直 top/bottom/center 误差 ≤0.35mm（本机 0.154/0.072/0.113mm）、水平中心 ≤0.05mm（本机 -0.011mm）、0 位图 |
 | 测试 EMF | `Metafile` 录制 900×600 EMF，保存为**真实 EMF**（文件头 01 00 00 00），以字节重建原生 `CF_ENHMETAFILE` 放入剪贴板 | 写入成功且 EMF 头校验通过 |
 | C# 转换 | 调用桥同一转换函数读取剪贴板 → PNG | `ok=true`、`sourceFormat=EMF`、宽度 4000–5200、PNG 签名正确、非空白、体积 <8MB |
 | 桥端到端 | 网页端真实 `postMessage` 发 `read-clipboard-image`，探针捕获宿主响应 | 收到且 `ok=true`；`emfBase64` 为真实 EMF、可被 `System.Drawing.Metafile` 重新打开、记录数/边界合法、与写入剪贴板的文件一致 |
@@ -576,6 +597,7 @@ selftest\
 ├─ vector-pdf-crop-trim1mm.pdf / .png ← crop+1mm 安全边距样张（152×102mm，渲染余量 ≈0.7–0.85mm）
 ├─ vector-pdf-crop-trim2mm.pdf / .png ← crop+2mm 安全边距样张（154×104mm，渲染余量 ≈1.7–1.9mm）
 ├─ vector-pdf-label-center.pdf ← 编号锚点/中心样张（3×2 bottom-center，crop.x=5.546mm）
+├─ config1-label-wysiwyg.pdf ← config1（2×3/负间距/底部编号）WYSIWYG 样张
 ├─ app-vector-e2e.pdf        ← 应用级 E2E 样张（JS 注入 .fig → exportVectorPdfBase64，170×193mm）
 ├─ app-vector-e2e-trimmed.pdf / .png    ← 应用级 trim 基础用例（77.39×60.11mm，余量 ≈0.85–1.02mm）
 ├─ app-vector-trim-label-1mm.pdf / .png ← 底部中间编号 + trim=0 安全边距 1mm 样张（72.94×65.53mm，余量 1.02mm）
@@ -583,34 +605,35 @@ selftest\
 └─ screenshot.png            ← 应用窗口截图（上传 .fig + 底部编号后）
 ```
 
-本机（Windows 10.0.26200 / WebView2 156.0.4314.58 / MATLAB R2024b / PowerPoint 2021）v1.4.0 候选包结果：
-**多文件版与单文件版均 exitCode 0**（串行执行）。应用版本 1.4.0、host-ready 版本 1.4.0、exe FileVersion 1.4.0.0；
-应用就绪 ~8–212 ms；三栏布局 CSS 视口 1280×800、grid 276+678+326 px；
-EMF→PNG 4400×2933（~164 KB）；桥端到端 ~350–358 ms；应用 JS 桥 ~293–334 ms；MATLAB `.fig` 转换 ~26.6–32.4s；
-PowerPoint 首次导出 **26.9s / 31.7s**（冷启动 24.8/27.4s）→ 后续 **0.54s / 0.78s**（提速 98.0%/97.5%），连续 7 次复用；
-**编号中心（v1.4.0）**：期望 37.954/122.954mm，实测 37.928/122.951mm，误差 **-0.026/-0.003mm（≤0.5mm）**；
-trim=0 四边 1.02mm、底部编号墨迹 278px、trim=2 四边 2.03–2.20mm、0 位图；
-外观主题冒烟深色/violet 通过（body 亮度 17.5、figure-shell 白、深/浅 PNG 逐字节一致）；恢复 light/blue；
-selftest 结束显式 shutdown 后 POWERPNT 残留=0；console error 0；截图 1600×1000。
-整轮自测：多文件版 **123.5 s**、单文件版 **138.1 s**；完整构建（含双自测）**275.5 s**。
+本机（Windows 10.0.26200 / WebView2 156.0.4314.58 / MATLAB R2024b / PowerPoint 2021）v1.4.1 候选包结果：
+**多文件版与单文件版均 exitCode 0**（串行执行）。应用版本 1.4.1、host-ready 版本 1.4.1、exe FileVersion 1.4.1.0；
+应用就绪 ~8–33 ms；三栏布局 CSS 视口 1067×667、grid 244+527+296 px；EMF→PNG 4400×2933（~164 KB）；
+桥端到端 ~333–414 ms；应用 JS 桥 ~350–392 ms；MATLAB `.fig` 转换 ~30–35s；
+PowerPoint 首次导出 **26.9s**（冷启动 ~24.6–24.9s）→ 后续 **0.53s**（提速 98.0–98.1%），连续 7 次复用同一实例；
+**config1 编号 WYSIWYG（v1.4.1）**：垂直误差 top **0.154mm**/bottom **0.072mm**/center **0.113mm**（≤0.35mm），
+水平中心误差 **-0.011mm**（≤0.05mm），最终 crop=(2.846,1.506)mm（trace），0 位图；
+trim=0 四边余量 1.02/0.85/1.19/1.19mm、底部编号墨迹 328px；trim=2 四边 2.03–2.20mm；
+编号中心锚点用例误差 -0.026/-0.003mm；外观主题冒烟通过（body 亮度 17.5、figure-shell 白、PNG 逐字节一致）；
+selftest 结束显式 shutdown 后 POWERPNT 残留=0；console error 0；截图 1601×1001。
+整轮自测：多文件版 **141.6 s**、单文件版 **136.9 s**；完整构建（含双自测）**292.2 s**。
 
-### 8.4 v1.4.0 候选包核对
+### 8.4 v1.4.1 候选包核对
 
 | 文件 | 大小 | SHA256 |
 | --- | --- | --- |
-| `dist\FigurePlay.exe` | 312,832 B | `6F1F338566AE231AAEFC5276A49A4B8C0955891A5A8DEB6C84ABD1E7B361CF1D` |
-| `dist-single\FigurePlay.exe` | 856,576 B | `F9E160978C6B21155AD85A0A56D33471D0EF74903DF970E1D59E4268F9E35599` |
-| `FigurePlay-desktop-1.4.0-win-x64.zip` | 816,945 B | `32CF346CB8E5C8D1C2B5F8479F02BF807C644CB0FE58F441E54A6185A6D78746` |
-| `FigurePlay-1.4.0-single-win-x64.zip` | 845,997 B | `C1AC235E898A968B629BFF54A1D514F420A25A5DDCABED24E19D6BA52298830A` |
+| `dist\FigurePlay.exe` | 331,776 B | `4819BE5D78D1354047D8A7A36FCF52DBA9F786D4EB76157A4EBB270C6BDA9985` |
+| `dist-single\FigurePlay.exe` | 862,208 B | `0CFCE7140B3EC006305B1FCFDDC7000A008414D79CDC3B201F5200EC6C4AB10F` |
+| `FigurePlay-desktop-1.4.1-win-x64.zip` | 822,894 B | `7099828FA2AAA0203D18B3E60F48C74EFFA8C2995D0BD3D66B5FCF48053B910B` |
+| `FigurePlay-1.4.1-single-win-x64.zip` | 852,002 B | `E91B3C2802CF58B779494FCFCC4D294B946C338AD5760E406A4933A66A6D034D` |
 | `wwwroot\index.html` | 44,893 B | `73F4001DBBA6E15660C835E06E14375A583809B44231D7A3141D6F9DDB0F1C5D` |
 | `wwwroot\assets\styles.css` | 40,904 B | `7A9C1B8A0BBE7AD4808C79F01584AC40149ED5086381EFD7E2E1055F87DB024D` |
 | `wwwroot\assets\theme.css` | 6,988 B | `D23C9F653AA27E782629406676B4D0C3980F6A7F91B7657707DC51A63F0B05FE` |
-| `wwwroot\js\app.js` | 161,160 B | `89D147585EF7993EB9F380964E29446F72429C8CFCA58DB3853045D01CF130A7` |
+| `wwwroot\js\app.js` | 162,221 B | `BA1049D6E5C549A46B9902A4DC69A968D0142E6EC645AF6415CB3241C02573F4` |
 | `wwwroot\js\appearance.js` | 5,109 B | `62093AE77A7A5770F0139C41A23004BC58F420384A3FE0DF6B514642C1EF3AB2` |
 | `wwwroot\js\config-profiles.js` | 18,460 B | `4C8DDD4AFEB6140D86FEBD5F8EE0B58EC70A5B23636BAA13C9C7FE6DD563B481` |
 | `wwwroot\js\layout.js` | 18,898 B | `094EEDC49361D43C9CF16CFBB556A2914C72EC846B48353F5F8BC6F497BB5C8F` |
 | `wwwroot\js\render-svg.js` | 17,116 B | `6DBA2AE85D3B9F83AFD87BF967BECE41CB14A92655089F60EFADCD6AA21679E9` |
-| `wwwroot\js\util.js` | 17,788 B | `EE6040A4F5B7F4A26FAE11B270CBB546AE627BDE061839028939018935703E9F` |
+| `wwwroot\js\util.js` | 17,788 B | `C53EB3B285B949C98722A839490CD36DD13860CDEE1C96566BA529024C42C8F1` |
 | `wwwroot\js\export.js` | 15,133 B | `C73BCBB7C1B70CCE4613D67BEBC030FA9BBE778DE049B2971118DC1C19C1CF0D` |
 | `wwwroot\js\desktop.js` | 7,012 B | `1B26B2ECC64F220D318A546DBB8EA579BDA902A0AB49D586D11DA2E9F35C6A93` |
 | `wwwroot\js\pdf.js` | 6,260 B | `F3B2B1FBCD31C7B2167843C34872697FF9ADCD84A1DB2CA552FFE5A15578D7A3` |
@@ -679,6 +702,7 @@ selftest 结束显式 shutdown 后 POWERPNT 残留=0；console error 0；截图 
 | PowerPoint 预热 | 主窗口就绪后延迟 1.5s 后台启动 PowerPoint（不显示窗口、不创建演示文稿），失败静默；`--selftest` 不预热以便测冷启动 |
 | 界面主题不影响导出 | v1.3.4 外观（深色/主题色）只改 CSS 变量与 data-* 属性，不重绘图稿；selftest 已逐字节比对深色/浅色 PNG 一致，`#figure-shell` 在深色下仍为白色 |
 | 编号位置一致性（v1.4.0） | 矢量 PDF 标签按真实锚点 `label.XMm` 定位并写回文本框几何（PowerPoint WordWrap=false 会压缩文本框）；selftest 3×2 bottom-center 编号中心误差 ≤0.03mm；与预览/裁边后的位置一致 |
+| 编号垂直 WYSIWYG（v1.4.1） | app 发送预览文字 bbox（textLeftMm/textTopMm/textWmm/textHmm）；宿主水平保持锚点方案、垂直用 TextFrame2 BoundTop/BoundHeight 对齐文字 bbox 垂直中心；config1 实测垂直误差 0.072–0.154mm、水平 -0.011mm；Bound 不可用时按 0.15×字号 leading 兜底 |
 | 矢量 PDF 复杂变换回退 | `cover` / `zoom` / `offset` 等非 contain/stretch 变换返回 `UNSUPPORTED_TRANSFORM`，前端回退位图 PDF；rotation 支持 |
 | crop 无效时忽略 | crop 越界/过小会静默忽略，输出整页（不报错） |
 | 高分辨率 PNG 体积 | EMF→PNG 目标 4400px；单张 PNG 超过 8MB 时会自动缩小重试，避免桥消息/内存过大 |
@@ -719,6 +743,12 @@ selftest 结束显式 shutdown 后 POWERPNT 残留=0；console error 0；截图 
   计算文本框（center/left/right），并在 WordWrap=false 压缩宽度后写回 `Width/Height/Left/Top`+Alignment；
   背景标签仍用 app box。新增 `SelfTestRunner.LabelCenter.cs`（宿主级 3×2 bottom-center + crop 偏移，
   `pdftotext -bbox` 校验编号中心误差 ≤0.5mm）；应用侧新增配置模板 `js\config-profiles.js`（wwwroot 20 文件）。
+- v1.4.1：应用 label spec 新增 `textLeftMm/textTopMm/textWmm/textHmm`（预览 SVG 实际 getBBox）；
+  宿主 `VectorPdfModels` 解析（可选字段）并在 `Compose` 中仅做**垂直** WYSIWYG 校正
+  （`TextFrame2.TextRange.BoundTop/BoundHeight` 中心对齐 `textTopMm+textHmm/2-crop.y`；水平保持 v1.4.0
+  锚点方案），Bound 不可用时按 `0.15×fontSizePt` leading 兜底；新增 `SelfTestRunner.Config1Label.cs`
+  （包装 `FP.desktop.exportVectorPdf` 捕获真实 spec + 宿主 trace 最终 crop，`pdftotext -bbox` 校验
+  config1 垂直/水平误差）；主流程把 lifecycle shutdown 移到所有 PowerPoint 用例之后。
 - 修改 C# 后：`build.ps1` 自动编译 + 双自测 + 双 zip（双自测含 MATLAB 与多次 PowerPoint 导出，约 13–15 分钟）；
 - 只改网页端（`E:\FigurePlay`）后：`build.ps1 -SkipBuild` 快速重打包（payload 会重新生成，单文件版随之更新）；
 - 修改桥协议时同步改：`BridgeProtocol.cs` ↔ `E:\FigurePlay\js\desktop.js` ↔ 本文档第 4 节；

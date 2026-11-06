@@ -10,11 +10,11 @@ namespace FigurePlay.Desktop.Bridge
     ///   JS→Host : {"type":"read-clipboard-image","requestId":"&lt;id&gt;"}
     ///   Host→JS : {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":true,"dataUrl":"data:image/png;base64,...","width":W,"height":H,"sourceFormat":"EMF|Metafile|Bitmap|DIB"}
     ///             失败时 {"type":"clipboard-image","requestId":"&lt;id&gt;","ok":false,"error":"中文原因"}
-    ///   启动后 Host 可发 {"type":"host-ready","version":"1.4.0"}
+    ///   启动后 Host 可发 {"type":"host-ready","version":"1.4.1"}
     /// </summary>
     internal static class BridgeProtocol
     {
-        public const string HostVersion = "1.4.0";
+        public const string HostVersion = "1.4.1";
 
         public const string TypeReadClipboardImage = "read-clipboard-image";
         public const string TypeClipboardImage = "clipboard-image";

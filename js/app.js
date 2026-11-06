@@ -2488,12 +2488,23 @@
       panels.push(base);
     }
     const labels = [];
+    const labelTextEls = el.svg ? el.svg.querySelectorAll('.label-text') : [];
     for (let i = 0; i < currentLabels.length; i++) {
       const label = currentLabels[i];
       const panel = label.panel;
       if (!panel) continue;
       const placement = FP.getLabelPlacement(state.label, panel, label.text);
       const box = placement.box || { x: placement.x, y: placement.y - placement.ascentMm, w: 10, h: placement.fsMm };
+      let textBox = null;
+      const textEl = labelTextEls[i];
+      if (textEl && typeof textEl.getBBox === 'function') {
+        try {
+          const bb = textEl.getBBox();
+          if (bb && isFinite(bb.x) && isFinite(bb.y) && bb.width > 0 && bb.height > 0) {
+            textBox = { x: bb.x, y: bb.y, w: bb.width, h: bb.height };
+          }
+        } catch (e) { /* fallback to placement box */ }
+      }
       labels.push({
         text: label.text,
         xMm: placement.x,
@@ -2502,6 +2513,10 @@
         boxYmm: box.y,
         boxWmm: Math.max(box.w, 0.5),
         boxHmm: Math.max(box.h, 0.5),
+        textLeftMm: textBox ? textBox.x : box.x,
+        textTopMm: textBox ? textBox.y : (placement.y - placement.ascentMm),
+        textWmm: textBox ? textBox.w : Math.max(0.5, placement.widthMm),
+        textHmm: textBox ? textBox.h : Math.max(0.5, placement.ascentMm + placement.descentMm),
         fontSizePt: state.label.fontSizePt,
         fontName: VECTOR_FONT_NAMES[state.label.fontFamily] || 'Times New Roman',
         bold: !!state.label.bold,
@@ -2600,6 +2615,9 @@
       }
       if (hasUsableVectorPdf()) {
         setStatus('正在用 PowerPoint 生成矢量 PDF…');
+        if (document.fonts && document.fonts.ready) {
+          try { await document.fonts.ready; } catch (e) { /* ignore */ }
+        }
         const vec = buildVectorPdfSpec(trimCrop);
         if (vec.ok) {
           try {
@@ -3810,6 +3828,9 @@
           } catch (err) {
             console.warn('[FigurePlay] 矢量 PDF 墨迹裁剪检测失败', err);
           }
+        }
+        if (document.fonts && document.fonts.ready) {
+          try { await document.fonts.ready; } catch (e) { /* ignore */ }
         }
         const vec = buildVectorPdfSpec(cropOverride);
         if (!vec.ok) return { ok: false, error: vec.reason };

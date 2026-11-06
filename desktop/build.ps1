@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.4.0-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.4.0-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.4.1-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.4.1-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -227,6 +227,17 @@ function Read-SelfTestReport([string]$ReportPath, [string]$Label) {
         $lbl = $report.vectorPdf.labelCenter
         Write-Info ("编号中心      : ok={0} (a)={1}mm/err={2}mm (b)={3}mm/err={4}mm 容差={5}mm" -f $lbl.ok, $lbl.checks.centerAMm, $lbl.checks.centerAErrorMm, $lbl.checks.centerBMm, $lbl.checks.centerBErrorMm, $lbl.checks.toleranceMm)
     }
+    if ($report.config1Label) {
+        $cfg = $report.config1Label
+        if ($cfg.available) {
+            $cc = $cfg.checks
+            Write-Info ("config1 编号  : ok={0} 垂直误差 top={1}mm bottom={2}mm center={3}mm 水平误差={4}mm 位图={5}" -f $cfg.ok, $cc.verticalTopErrorMm, $cc.verticalBottomErrorMm, $cc.verticalCenterErrorMm, $cc.horizontalCenterErrorMm, $cc.imageCount)
+        }
+        else {
+            Write-Info 'config1 编号  : skipped'
+        }
+    }
+
     if ($report.appearanceSmoke) {
         $smoke = $report.appearanceSmoke
         $dark = $smoke.checks.dark
