@@ -20,6 +20,9 @@ namespace FigurePlay.Desktop
         /// <summary>测试/隔离用：覆盖 WebView2 用户数据目录。</summary>
         public string WebViewDataDir { get; private set; }
 
+        /// <summary>测试/验证用：正常模式自动执行“最大化→隐藏托盘→恢复”并写证据 JSON。</summary>
+        public string TrayAutoTestPath { get; private set; }
+
         public static AppOptions Parse(string[] args)
         {
             AppOptions options = new AppOptions();
@@ -55,6 +58,12 @@ namespace FigurePlay.Desktop
                             if (i + 1 < args.Length)
                             {
                                 options.WebViewDataDir = args[++i];
+                            }
+                            break;
+                        case "--tray-autotest":
+                            if (i + 1 < args.Length)
+                            {
+                                options.TrayAutoTestPath = args[++i];
                             }
                             break;
                         case "--help":

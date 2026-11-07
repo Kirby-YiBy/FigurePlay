@@ -61,7 +61,8 @@ const finalV142 = argv.includes('--final-v142');
 const finalV150 = argv.includes('--final-v150');
 const finalV151 = argv.includes('--final-v151');
 const finalV152 = argv.includes('--final-v152');
-const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131 || finalV132 || finalV133 || finalV134 || finalV140 || finalV141 || finalV142 || finalV150 || finalV151 || finalV152;
+const finalV153 = argv.includes('--final-v153');
+const finalMode = argv.includes('--final') || finalV11 || finalV12 || finalV13 || finalV131 || finalV132 || finalV133 || finalV134 || finalV140 || finalV141 || finalV142 || finalV150 || finalV151 || finalV152 || finalV153;
 const suiteArg = argv.find((item) => item.startsWith('--suite='));
 const suite = suiteArg ? suiteArg.slice('--suite='.length) : 'all';
 const onlyArg = argv.find((item) => item.startsWith('--only='));
@@ -124,7 +125,12 @@ const baseFinalNaming = finalV134
                 reportName: 'report.md', shotsName: 'shots', exportsName: 'exports', title: '',
               }))))));
 
-const finalNaming = finalV152
+const finalNaming = finalV153
+  ? {
+    reportName: 'report-v1.5.3.md', shotsName: 'screens-v1.5.3', title: '（v1.5.3）',
+    keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v153',
+  }
+  : (finalV152
   ? {
     reportName: 'report-v1.5.2.md', shotsName: 'screens-v1.5.2', title: '（v1.5.2）',
     keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v152',
@@ -154,7 +160,7 @@ const finalNaming = finalV152
               reportName: 'report-v1.4.0.md', shotsName: 'screens-v1.4.0', title: '（v1.4.0）',
               keepExportsInRun: true, compactScreens: true, runRootName: 'e2e-v140',
             }
-            : baseFinalNaming)))));
+            : baseFinalNaming))))));
 
 const log = (...args) => console.log(...args);
 const section = (title) => log(`\n=== ${title} ===`);
@@ -300,7 +306,7 @@ async function writeFinalReport(summary, runDir, naming = {}) {
   let prunedExports = 0;
   if (keepExportsInRun) {
     // E: 盘空间有限：只保留关键导出样例（各格式主样例 + 合并/分组/多页证据）
-    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v133-|^fp-v134-|^fp-v14-|^fp-v141-|^fp-v142-|^fp-v15-|^fp-v151-|^fp-v152-)/;
+    const keepExportRe = /(^fp-e2e-(png-300|jpg-q95|figure|png-transparent)\.(png|jpg|svg|pdf)$|^fp-v11-merge(\.|-)|^fp-v133-|^fp-v134-|^fp-v14-|^fp-v141-|^fp-v142-|^fp-v15-|^fp-v151-|^fp-v152-|^fp-v153-)/;
     for (const file of walkFiles(exportsSourceDir)) {
       if (keepExportRe.test(path.basename(file))) continue;
       try {
@@ -607,21 +613,25 @@ async function writeFinalReport(summary, runDir, naming = {}) {
 
   lines.push('', '## 复现命令', '', '```powershell');
   lines.push(`# 完整 E2E（含报告与截图）`);
-  const finalCmd = finalV152 ? '--suite=all --final-v152'
-    : (finalV151 ? '--suite=all --final-v151'
-      : (finalV150 ? '--suite=all --final-v150'
-        : (finalV142 ? '--suite=all --final-v142'
-          : (finalV141 ? '--suite=all --final-v141'
-            : (finalV140 ? '--suite=all --final-v140'
-              : (finalV134 ? '--suite=all --final-v134'
-                : (finalV133 ? '--suite=all --final-v133'
-                  : (finalV132 ? '--suite=all --final-v132'
-                    : (finalV131 ? '--suite=all --final-v131'
-                      : (finalV13 ? '--suite=all --final-v13'
-                        : (finalV12 ? '--suite=all --final-v12' : (finalV11 ? '--final-v11' : '--final'))))))))))));
+  const finalCmd = finalV153 ? '--suite=all --final-v153'
+    : finalV152 ? '--suite=all --final-v152'
+      : finalV151 ? '--suite=all --final-v151'
+        : finalV150 ? '--suite=all --final-v150'
+          : finalV142 ? '--suite=all --final-v142'
+            : finalV141 ? '--suite=all --final-v141'
+              : finalV140 ? '--suite=all --final-v140'
+                : finalV134 ? '--suite=all --final-v134'
+                  : finalV133 ? '--suite=all --final-v133'
+                    : finalV132 ? '--suite=all --final-v132'
+                      : finalV131 ? '--suite=all --final-v131'
+                        : finalV13 ? '--suite=all --final-v13'
+                          : finalV12 ? '--suite=all --final-v12'
+                            : finalV11 ? '--final-v11' : '--final';
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} ${finalCmd}`);
   lines.push(`# v1.5.2 全量（v1.0 回归 + v1.1 + v1.2 + v1.3 + v1.4 + v1.5 + 取消/拖动/主题色）`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v152`);
+  lines.push(`# v1.5.3 全量（v1.5.2 + 桌面托盘修复/版本号 1.5.3）`);
+  lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=all --final-v153`);
   lines.push(`# 只跑某场景 / suite`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --only=U`);
   lines.push(`node ${path.join(DEV_DIR, 'e2e.mjs')} --suite=v13`);
@@ -695,7 +705,7 @@ async function main() {
   log(`FigurePlay E2E run ${runId}  [suite=${suite}: ${SUITES[suite].name}]`);
   log(`应用: ${APP_INDEX}  (源码版本 ${readAppVersionFromSource()})`);
   log(`场景: ${selected.map((scenario) => scenario.code).join(', ')}  (headless=${!headed})`);
-  const finalTargetText = finalV152 || finalV151 || finalV150 || finalV142 || finalV141 || finalV140 || finalV134 || finalV133 || finalV132 || finalV131 || finalV13 || finalV12
+  const finalTargetText = finalV153 || finalV152 || finalV151 || finalV150 || finalV142 || finalV141 || finalV140 || finalV134 || finalV133 || finalV132 || finalV131 || finalV13 || finalV12
     ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / run 内关键导出`
     : (finalMode ? `  →  final: ${finalNaming.reportName} / ${finalNaming.shotsName}/ / artifacts/${finalNaming.exportsName}/` : '');
   log(`产物: ${runDir}${finalTargetText}\n`);

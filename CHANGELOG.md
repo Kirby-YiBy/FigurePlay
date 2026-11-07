@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的风格，版本号使用 `MAJOR.MINOR.PATCH`。
 
+## [v1.5.3] - 2026-11-07
+
+### Fixed
+- 修复窗口最大化时选择「最小化到托盘」后残留一个空白最大化窗口的问题（GitHub Issue #1）。
+  根因是 `HideToTray()` 在 `Hide()` 后修改 `ShowInTaskbar`，触发 WinForms 句柄重建并重新应用 `Maximized`；
+  现在不再切换 `ShowInTaskbar`，隐藏/恢复保持同一窗口句柄和最大化状态。
+
 ## [v1.5.2] - 2026-11-07
 
 ### Fixed
@@ -63,6 +70,7 @@
 
 - v1.0–v1.2：网格排版、合并单元格、单/双栏模板、批量编号、粘贴小画布、多页与分组、撤销/重做、MATLAB `.fig` 导入、多页导出。
 
+[v1.5.3]: https://github.com/Kirby-YiBy/FigurePlay/compare/v1.5.2...v1.5.3
 [v1.5.2]: https://github.com/Kirby-YiBy/FigurePlay/compare/v1.5.1...v1.5.2
 [v1.5.1]: https://github.com/Kirby-YiBy/FigurePlay/compare/v1.5.0...v1.5.1
 [v1.5.0]: https://github.com/Kirby-YiBy/FigurePlay/compare/v1.4.2...v1.5.0

@@ -23,7 +23,7 @@
    `WebView2Loader.dll`、`wwwroot`），首次启动自解压到 `%LOCALAPPDATA%\FigurePlay\bin\app-<hash>`，
    从任意目录双击即可运行，不依赖旁边 dll/assets；仍依赖系统 **WebView2 Runtime**。
 
-> 本候选包内嵌的是 **FigurePlay 应用 v1.5.2**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
+> 本候选包内嵌的是 **FigurePlay 应用 v1.5.3**（多页工程、子图分组、撤销/重做、autoPad、PDF trim 裁剪、
 > ink 裁剪并入编号排版盒 + 至少 1mm 安全边距、行/列间距支持 -50～80mm、负间距下选中/悬停顶层描边、
 > 界面外观（浅色/深色/跟随系统 + 7 种主题色）、配置模板（`js/config-profiles.js`）、
 > 矢量 PDF + crop、saveAs 开关、`.fig` EMF 保留等；v1.4.1 起 spec 携带预览文字 bbox 用于编号 WYSIWYG；
@@ -699,6 +699,31 @@ config-profiles 24,871B `81DEF164…`、project-file 7,318B `DD15025A…`、logs
 
 `dist\wwwroot` 26/26 逐字节一致（含 dialog-drag.js）；双 selftest exit 0（多文件 133.7s / 单文件 135.2s）；
 两个 zip 解压复跑 exit 0（saveCancelE2E/updateE2E/saveFileE2E/closePrefs/appearance 全 True）。
+
+### 7.14 v1.5.3 托盘最大化回归修复（GitHub Issue #1）
+
+根因：最大化时 HideToTray 里 `Hide(); ShowInTaskbar=false;` 触发句柄重建并重新应用 Maximized，残留空白最大化窗口。
+修复（方案 A）：
+- `HideToTray()` 不再修改 `ShowInTaskbar`，只记录 `_stateBeforeTray`、置 `_isInTray` 后 `Hide()`；
+- `RestoreFromTray()` 不再设 `ShowInTaskbar=true`，按记录状态 `Show()` 并恢复 `Maximized/Normal`；
+- 正常模式 Win32 自动化实测（`--tray-autotest` + 外部枚举）：
+  最大化→隐藏→恢复全过程 **同一 HWND 788236**（未重建）；hidden 时 `win32Visible=False`、状态 Maximized；
+  restored 时 `win32Visible=True`、状态 Maximized；普通窗口再测 hidden 不可见/restored 可见且 Normal；
+  `ShowInTaskbar` 始终 True；托盘进程存活。
+- 对话框按钮实测：最大化 + WM_CLOSE → 找到「关闭 FigurePlay」对话框 → 点击 BUTTON“最小化到托盘(&M)”：
+  主窗口 `IsWindowVisible=False`、`IsZoomed=True`、进程存活（不退出、不留空白最大化窗口）。
+
+### 7.15 v1.5.3 产物
+
+| 文件 | 大小 | SHA256 |
+| --- | --- | --- |
+| `dist\FigurePlay.exe` | 439,296 B | `069720590995B17D274AF5E616A68EB4A7B1CFAFE1B0ED54A0AAE6FEC56B100F` |
+| `dist-single\FigurePlay.exe` | 922,112 B | `B3C6282C252132D016753080392D5BCDFEDB66F1675125F41176E8721569AB3B` |
+| `FigurePlay-desktop-1.5.3-win-x64.zip` | 882,339 B | `F7C54E0D00F624BE25D2503A3CD0A9E58D1897A5658E8B49716659106CDCD463` |
+| `FigurePlay-1.5.3-single-win-x64.zip` | 911,207 B | `60B3B9EE42FC54C823C698C18E632CF193AA4184E5E59F80255B8ADAB76C155A` |
+
+app 源仅 `js\util.js` 变更（17,788B `F53DF8DA…`，APP_VERSION=1.5.3），wwwroot 26 文件；
+双 selftest exit 0（多文件 138.6s / 单文件 136.0s）；两个 zip 解压复跑 exit 0。
 
 ---
 

@@ -74,8 +74,8 @@ $singleDir = Join-Path $desktopDir 'dist-single'
 $selftestDir = Join-Path $desktopDir 'selftest'
 $selftestSingleDir = Join-Path $desktopDir 'selftest-single'
 
-$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.5.2-win-x64.zip'
-$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.5.2-single-win-x64.zip'
+$zipPath = Join-Path $desktopDir 'FigurePlay-desktop-1.5.3-win-x64.zip'
+$singleZipPath = Join-Path $desktopDir 'FigurePlay-1.5.3-single-win-x64.zip'
 
 if (-not $AppSource) {
     $AppSource = Split-Path -Parent $desktopDir
@@ -491,7 +491,7 @@ Write-Step '复制最新网页应用到 dist\wwwroot'
 $wwwroot = Join-Path $distDir 'wwwroot'
 New-Item -ItemType Directory -Path $wwwroot -Force | Out-Null
 
-$excludeNames = @('_dev', 'docs', 'desktop', 'README.md', '启动FigurePlay.bat', '启动FigurePlay桌面版.bat', '.git', '.gitignore', '.gitattributes')
+$excludeNames = @('_dev', 'docs', 'desktop', 'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'LICENSE', 'PRIVACY.md', 'RELEASE.md', 'SECURITY.md', 'update.example.json', '.github', '启动FigurePlay.bat', '启动FigurePlay桌面版.bat', '.git', '.gitignore', '.gitattributes')
 $copied = 0
 $totalBytes = 0
 Get-ChildItem -Path $AppSource -Force | Where-Object { $excludeNames -notcontains $_.Name } | ForEach-Object {

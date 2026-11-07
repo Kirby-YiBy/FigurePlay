@@ -46,6 +46,8 @@ namespace FigurePlay.Desktop
         private readonly UpdateService _updateService;
         private NotifyIcon _trayIcon;
         private bool _trayBalloonShown;
+        private bool _isInTray;
+        private FormWindowState _stateBeforeTray = FormWindowState.Normal;
         private bool _forceClose;
         private readonly List<ConsoleErrorRecord> _consoleErrors = new List<ConsoleErrorRecord>();
         private readonly List<string> _hostErrors = new List<string>();
@@ -106,6 +108,7 @@ namespace FigurePlay.Desktop
 
             Load += OnLoadAsync;
             FormClosing += OnFormClosing;
+            Shown += OnShownTrayAutoTest;
             FormClosed += OnFormClosed;
             KeyDown += OnKeyDown;
         }
@@ -626,6 +629,15 @@ namespace FigurePlay.Desktop
 
         private void HideToTray()
         {
+            // v1.5.3 方案 A：不要同时改 ShowInTaskbar（会触发句柄重建并重新应用 Maximized，
+            // 残留空白最大化窗口）；只记录状态并 Hide，恢复时按记录状态 Show。
+            if (_isInTray)
+            {
+                return;
+            }
+
+            _stateBeforeTray = WindowState;
+            _isInTray = true;
             if (_trayIcon == null)
             {
                 WindowState = FormWindowState.Minimized;
@@ -633,7 +645,6 @@ namespace FigurePlay.Desktop
             }
 
             Hide();
-            ShowInTaskbar = false;
             _trayIcon.Visible = true;
             if (!_trayBalloonShown)
             {
@@ -651,13 +662,20 @@ namespace FigurePlay.Desktop
 
         private void RestoreFromTray()
         {
-            ShowInTaskbar = true;
-            Show();
-            if (WindowState == FormWindowState.Minimized)
+            // v1.5.3：不设 ShowInTaskbar=true（保持原值，避免句柄重建）；按隐藏前状态恢复。
+            if (!_isInTray && Visible)
             {
-                WindowState = FormWindowState.Normal;
+                Activate();
+                BringToFront();
+                return;
             }
 
+            _isInTray = false;
+            Show();
+            FormWindowState target = _stateBeforeTray == FormWindowState.Maximized
+                ? FormWindowState.Maximized
+                : FormWindowState.Normal;
+            WindowState = target;
             Activate();
             BringToFront();
         }
@@ -671,6 +689,120 @@ namespace FigurePlay.Desktop
 
             _forceClose = true;
             Close();
+        }
+
+        private async void OnShownTrayAutoTest(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_options.TrayAutoTestPath))
+            {
+                return;
+            }
+
+            Shown -= OnShownTrayAutoTest;
+            await RunTrayAutoTestAsync();
+        }
+
+        private async Task RunTrayAutoTestAsync()
+        {
+            try
+            {
+                List<JObject> stages = new List<JObject>();
+                WindowState = FormWindowState.Maximized;
+                await Task.Delay(900);
+                stages.Add(TrayStage("maximized"));
+                HideToTray();
+                await Task.Delay(600);
+                stages.Add(TrayStage("hidden"));
+                WriteTrayAutoTest(stages, "hidden");
+                await Task.Delay(3500);
+                RestoreFromTray();
+                await Task.Delay(900);
+                stages.Add(TrayStage("restored"));
+                WriteTrayAutoTest(stages, "restored");
+                await Task.Delay(700);
+                WindowState = FormWindowState.Normal;
+                await Task.Delay(700);
+                stages.Add(TrayStage("normal"));
+                HideToTray();
+                await Task.Delay(600);
+                stages.Add(TrayStage("normal-hidden"));
+                WriteTrayAutoTest(stages, "normal-hidden");
+                await Task.Delay(3000);
+                RestoreFromTray();
+                await Task.Delay(800);
+                stages.Add(TrayStage("normal-restored"));
+                WriteTrayAutoTest(stages, "done");
+                await Task.Delay(700);
+                stages.Add(TrayStage("final"));
+                WriteTrayAutoTest(stages, "done");
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    File.WriteAllText(_options.TrayAutoTestPath,
+                        new JObject { ["error"] = ex.Message }.ToString());
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+            finally
+            {
+                _forceClose = true;
+                Close();
+            }
+        }
+
+        private JObject TrayStage(string name)
+        {
+            bool win32Visible = false;
+            try
+            {
+                win32Visible = NativeMethods.IsWindowVisible(Handle);
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return new JObject
+            {
+                ["stage"] = name,
+                ["time"] = DateTime.UtcNow.ToString("o"),
+                ["handle"] = Handle.ToInt64(),
+                ["win32Visible"] = win32Visible,
+                ["formVisible"] = Visible,
+                ["windowState"] = WindowState.ToString(),
+                ["stateBeforeTray"] = _stateBeforeTray.ToString(),
+                ["isInTray"] = _isInTray,
+                ["showInTaskbar"] = ShowInTaskbar,
+                ["trayIconVisible"] = _trayIcon != null && _trayIcon.Visible,
+            };
+        }
+
+        private void WriteTrayAutoTest(List<JObject> stages, string phase)
+        {
+            try
+            {
+                JObject payload = new JObject
+                {
+                    ["phase"] = phase,
+                    ["stages"] = new JArray(stages.ToArray()),
+                };
+                File.WriteAllText(_options.TrayAutoTestPath, payload.ToString(Newtonsoft.Json.Formatting.Indented));
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private static class NativeMethods
+        {
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            internal static extern bool IsWindowVisible(IntPtr hWnd);
         }
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
